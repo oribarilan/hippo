@@ -1,0 +1,312 @@
+package main
+
+import (
+	"context"
+	"fmt"
+	"os"
+	"os/exec"
+	"strings"
+
+	"github.com/microsoft/azure-devops-go-api/azuredevops"
+	"github.com/microsoft/azure-devops-go-api/azuredevops/webapi"
+	"github.com/microsoft/azure-devops-go-api/azuredevops/workitemtracking"
+)
+
+type AzureDevOpsClient struct {
+	connection      *azuredevops.Connection
+	workItemClient  workitemtracking.Client
+	ctx             context.Context
+	organizationURL string
+	project         string
+}
+
+func NewAzureDevOpsClient() (*AzureDevOpsClient, error) {
+	// Read environment variables
+	organizationURL := os.Getenv("AZURE_DEVOPS_ORG_URL")
+	project := os.Getenv("AZURE_DEVOPS_PROJECT")
+
+	if organizationURL == "" {
+		return nil, fmt.Errorf("AZURE_DEVOPS_ORG_URL environment variable is not set")
+	}
+	if project == "" {
+		return nil, fmt.Errorf("AZURE_DEVOPS_PROJECT environment variable is not set")
+	}
+
+	// Get access token from Azure CLI
+	accessToken, err := getAzureCliToken()
+	if err != nil {
+		return nil, fmt.Errorf("failed to get Azure CLI token: %w\nPlease run 'az login' first", err)
+	}
+
+	// Create a connection to Azure DevOps using the Azure CLI token
+	connection := azuredevops.NewPatConnection(organizationURL, accessToken)
+
+	ctx := context.Background()
+
+	// Create work item tracking client
+	workItemClient, err := workitemtracking.NewClient(ctx, connection)
+	if err != nil {
+		return nil, fmt.Errorf("failed to create work item client: %w", err)
+	}
+
+	return &AzureDevOpsClient{
+		connection:      connection,
+		workItemClient:  workItemClient,
+		ctx:             ctx,
+		organizationURL: organizationURL,
+		project:         project,
+	}, nil
+}
+
+// getAzureCliToken retrieves an access token from Azure CLI
+func getAzureCliToken() (string, error) {
+	// Use Azure CLI to get an access token for Azure DevOps
+	cmd := exec.Command("az", "account", "get-access-token", "--resource", "499b84ac-1321-427f-aa17-267ca6975798", "--query", "accessToken", "-o", "tsv")
+
+	output, err := cmd.Output()
+	if err != nil {
+		if exitErr, ok := err.(*exec.ExitError); ok {
+			return "", fmt.Errorf("az cli error: %s", string(exitErr.Stderr))
+		}
+		return "", fmt.Errorf("failed to execute az cli: %w", err)
+	}
+
+	token := strings.TrimSpace(string(output))
+	if token == "" {
+		return "", fmt.Errorf("received empty token from Azure CLI")
+	}
+
+	return token, nil
+}
+
+func (c *AzureDevOpsClient) GetWorkItems() ([]WorkItem, error) {
+	// Query for work items assigned to current user, ordered by recently updated
+	wiql := workitemtracking.Wiql{
+		Query: strPtr(fmt.Sprintf(`
+			SELECT [System.Id]
+			FROM WorkItems
+			WHERE [System.TeamProject] = '%s'
+			AND [System.AssignedTo] = @Me
+			AND [System.State] <> 'Closed'
+			AND [System.State] <> 'Removed'
+			ORDER BY [System.ChangedDate] DESC
+		`, c.project)),
+	}
+
+	// Execute the query with Top parameter to limit results
+	top := 10
+	queryArgs := workitemtracking.QueryByWiqlArgs{
+		Wiql: &wiql,
+		Top:  &top,
+	}
+
+	result, err := c.workItemClient.QueryByWiql(c.ctx, queryArgs)
+	if err != nil {
+		return nil, fmt.Errorf("failed to query work items: %w", err)
+	}
+
+	if result.WorkItems == nil || len(*result.WorkItems) == 0 {
+		return []WorkItem{}, nil
+	}
+
+	// Extract work item IDs
+	var ids []int
+	for _, ref := range *result.WorkItems {
+		if ref.Id != nil {
+			ids = append(ids, *ref.Id)
+		}
+	}
+
+	if len(ids) == 0 {
+		return []WorkItem{}, nil
+	}
+
+	// Get full work item details
+	workItemsArgs := workitemtracking.GetWorkItemsArgs{
+		Ids:    &ids,
+		Expand: &workitemtracking.WorkItemExpandValues.All,
+	}
+
+	workItems, err := c.workItemClient.GetWorkItems(c.ctx, workItemsArgs)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get work item details: %w", err)
+	}
+
+	// Convert to our WorkItem struct
+	var tasks []WorkItem
+	for _, wi := range *workItems {
+		task := c.convertWorkItem(wi)
+		tasks = append(tasks, task)
+	}
+
+	return tasks, nil
+}
+
+func (c *AzureDevOpsClient) convertWorkItem(wi workitemtracking.WorkItem) WorkItem {
+	fields := *wi.Fields
+
+	task := WorkItem{
+		ID: getIntField(wi.Id),
+	}
+
+	if title, ok := fields["System.Title"].(string); ok {
+		task.Title = title
+	}
+
+	if state, ok := fields["System.State"].(string); ok {
+		task.State = state
+	}
+
+	if workItemType, ok := fields["System.WorkItemType"].(string); ok {
+		task.WorkItemType = workItemType
+	}
+
+	if assignedTo, ok := fields["System.AssignedTo"].(map[string]interface{}); ok {
+		if displayName, ok := assignedTo["displayName"].(string); ok {
+			task.AssignedTo = displayName
+		}
+	}
+
+	if description, ok := fields["System.Description"].(string); ok {
+		task.Description = stripHTML(description)
+	}
+
+	if tags, ok := fields["System.Tags"].(string); ok {
+		task.Tags = tags
+	}
+
+	if priority, ok := fields["Microsoft.VSTS.Common.Priority"].(float64); ok {
+		task.Priority = int(priority)
+	}
+
+	if createdDate, ok := fields["System.CreatedDate"].(string); ok {
+		task.CreatedDate = formatDate(createdDate)
+	}
+
+	if changedDate, ok := fields["System.ChangedDate"].(string); ok {
+		task.ChangedDate = formatDate(changedDate)
+	}
+
+	return task
+}
+
+func getIntField(val *int) int {
+	if val == nil {
+		return 0
+	}
+	return *val
+}
+
+func strPtr(s string) *string {
+	return &s
+}
+
+func stripHTML(html string) string {
+	// Simple HTML tag removal - for production, use a proper HTML parser
+	result := html
+	result = strings.ReplaceAll(result, "<div>", "\n")
+	result = strings.ReplaceAll(result, "</div>", "")
+	result = strings.ReplaceAll(result, "<br>", "\n")
+	result = strings.ReplaceAll(result, "<br/>", "\n")
+	result = strings.ReplaceAll(result, "<p>", "\n")
+	result = strings.ReplaceAll(result, "</p>", "")
+
+	// Remove all remaining tags
+	for strings.Contains(result, "<") && strings.Contains(result, ">") {
+		start := strings.Index(result, "<")
+		end := strings.Index(result, ">")
+		if start < end {
+			result = result[:start] + result[end+1:]
+		} else {
+			break
+		}
+	}
+
+	return strings.TrimSpace(result)
+}
+
+func formatDate(dateStr string) string {
+	// Azure DevOps returns ISO 8601 format
+	// Just take the first part for now (date + time without milliseconds)
+	if len(dateStr) > 19 {
+		return dateStr[:19]
+	}
+	return dateStr
+}
+
+func (c *AzureDevOpsClient) UpdateWorkItemState(workItemID int, newState string) error {
+	// Create a patch document to update the state
+	op := webapi.OperationValues.Add
+	path := "/fields/System.State"
+
+	patchDocument := []webapi.JsonPatchOperation{
+		{
+			Op:    &op,
+			Path:  &path,
+			Value: newState,
+		},
+	}
+
+	updateArgs := workitemtracking.UpdateWorkItemArgs{
+		Id:       &workItemID,
+		Document: &patchDocument,
+	}
+
+	_, err := c.workItemClient.UpdateWorkItem(c.ctx, updateArgs)
+	if err != nil {
+		return fmt.Errorf("failed to update work item state: %w", err)
+	}
+
+	return nil
+}
+
+func (c *AzureDevOpsClient) GetWorkItemTypeStates(workItemType string) ([]string, error) {
+	// Get the work item type definition to get valid states
+	getTypeArgs := workitemtracking.GetWorkItemTypeArgs{
+		Project: &c.project,
+		Type:    &workItemType,
+	}
+
+	workItemTypeDef, err := c.workItemClient.GetWorkItemType(c.ctx, getTypeArgs)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get work item type: %w", err)
+	}
+
+	// Extract unique states from transitions
+	stateMap := make(map[string]bool)
+
+	if workItemTypeDef.Transitions != nil {
+		transitions := *workItemTypeDef.Transitions
+
+		// Add all "from" states (keys in the map)
+		for fromState := range transitions {
+			if fromState != "" {
+				stateMap[fromState] = true
+			}
+		}
+
+		// Add all "to" states
+		for _, transitionList := range transitions {
+			if transitionList != nil {
+				for _, transition := range transitionList {
+					if transition.To != nil && *transition.To != "" {
+						stateMap[*transition.To] = true
+					}
+				}
+			}
+		}
+	}
+
+	// Convert map to slice
+	states := make([]string, 0, len(stateMap))
+	for state := range stateMap {
+		states = append(states, state)
+	}
+
+	// If no states found, return a default set
+	if len(states) == 0 {
+		return []string{"New", "Active", "Closed"}, nil
+	}
+
+	return states, nil
+}
