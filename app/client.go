@@ -257,6 +257,11 @@ func (c *AzureDevOpsClient) convertWorkItem(wi workitemtracking.WorkItem) WorkIt
 		task.Description = stripHTML(description)
 	}
 
+	// History/Comments field
+	if history, ok := fields["System.History"].(string); ok {
+		task.Comments = stripHTML(history)
+	}
+
 	if tags, ok := fields["System.Tags"].(string); ok {
 		task.Tags = tags
 	}
@@ -370,8 +375,8 @@ func (c *AzureDevOpsClient) UpdateWorkItemState(workItemID int, newState string)
 	return nil
 }
 
-func (c *AzureDevOpsClient) GetWorkItemTypeStates(workItemType string) ([]string, error) {
-	// Get the work item type definition to get valid states
+func (c *AzureDevOpsClient) GetWorkItemTypeStates(workItemType string) ([]string, map[string]string, error) {
+	// Get the work item type definition to get valid states with categories
 	getTypeArgs := workitemtracking.GetWorkItemTypeArgs{
 		Project: &c.project,
 		Type:    &workItemType,
@@ -379,46 +384,98 @@ func (c *AzureDevOpsClient) GetWorkItemTypeStates(workItemType string) ([]string
 
 	workItemTypeDef, err := c.workItemClient.GetWorkItemType(c.ctx, getTypeArgs)
 	if err != nil {
-		return nil, fmt.Errorf("failed to get work item type: %w", err)
+		return nil, nil, fmt.Errorf("failed to get work item type: %w", err)
 	}
 
-	// Extract unique states from transitions
-	stateMap := make(map[string]bool)
+	// Extract states and their categories
+	var states []string
+	stateCategories := make(map[string]string)
 
-	if workItemTypeDef.Transitions != nil {
-		transitions := *workItemTypeDef.Transitions
+	if workItemTypeDef.States != nil && len(*workItemTypeDef.States) > 0 {
+		// Use the States field which includes category information
+		for _, state := range *workItemTypeDef.States {
+			if state.Name != nil && *state.Name != "" {
+				stateName := *state.Name
+				states = append(states, stateName)
 
-		// Add all "from" states (keys in the map)
-		for fromState := range transitions {
-			if fromState != "" {
-				stateMap[fromState] = true
+				// Map state name to its category
+				if state.Category != nil {
+					stateCategories[stateName] = *state.Category
+				} else {
+					stateCategories[stateName] = "Unknown"
+				}
 			}
 		}
+	} else {
+		// Fallback: Extract unique states from transitions if States field is not available
+		stateMap := make(map[string]bool)
 
-		// Add all "to" states
-		for _, transitionList := range transitions {
-			if transitionList != nil {
-				for _, transition := range transitionList {
-					if transition.To != nil && *transition.To != "" {
-						stateMap[*transition.To] = true
+		if workItemTypeDef.Transitions != nil {
+			transitions := *workItemTypeDef.Transitions
+
+			// Add all "from" states (keys in the map)
+			for fromState := range transitions {
+				if fromState != "" {
+					stateMap[fromState] = true
+				}
+			}
+
+			// Add all "to" states
+			for _, transitionList := range transitions {
+				if transitionList != nil {
+					for _, transition := range transitionList {
+						if transition.To != nil && *transition.To != "" {
+							stateMap[*transition.To] = true
+						}
 					}
 				}
 			}
 		}
-	}
 
-	// Convert map to slice
-	states := make([]string, 0, len(stateMap))
-	for state := range stateMap {
-		states = append(states, state)
+		// Convert map to slice
+		for state := range stateMap {
+			states = append(states, state)
+			// Guess category based on common state names
+			stateCategories[state] = guessStateCategory(state)
+		}
 	}
 
 	// If no states found, return a default set
 	if len(states) == 0 {
-		return []string{"New", "Active", "Closed"}, nil
+		defaultStates := []string{"New", "Active", "Closed"}
+		for _, state := range defaultStates {
+			stateCategories[state] = guessStateCategory(state)
+		}
+		return defaultStates, stateCategories, nil
 	}
 
-	return states, nil
+	return states, stateCategories, nil
+}
+
+// guessStateCategory attempts to categorize a state based on common naming patterns
+func guessStateCategory(state string) string {
+	stateLower := strings.ToLower(state)
+
+	// Proposed/Pending states
+	if strings.Contains(stateLower, "new") || strings.Contains(stateLower, "proposed") ||
+		strings.Contains(stateLower, "backlog") || strings.Contains(stateLower, "to do") {
+		return "Proposed"
+	}
+
+	// Completed states
+	if strings.Contains(stateLower, "closed") || strings.Contains(stateLower, "done") ||
+		strings.Contains(stateLower, "completed") {
+		return "Completed"
+	}
+
+	// Removed states
+	if strings.Contains(stateLower, "removed") || strings.Contains(stateLower, "cut") ||
+		strings.Contains(stateLower, "cancelled") {
+		return "Removed"
+	}
+
+	// InProgress states (default for anything active)
+	return "InProgress"
 }
 
 // GetTeamIterations fetches iterations for the team

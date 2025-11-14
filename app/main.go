@@ -53,6 +53,7 @@ type model struct {
 	filterInput     textinput.Model
 	stateCursor     int
 	availableStates []string
+	stateCategories map[string]string // Map of state name to category (Proposed, InProgress, Completed, etc.)
 	organizationURL string
 	projectName     string
 	searchActive    bool
@@ -79,6 +80,7 @@ type WorkItem struct {
 	IterationPath string
 	ParentID      *int
 	Children      []*WorkItem
+	Comments      string // Discussion/History
 }
 
 // TreeItem represents a flattened tree view item with depth information
@@ -111,6 +113,7 @@ func initialModel() model {
 		searchInput:     searchInput,
 		filterInput:     filterInput,
 		availableStates: []string{"New", "Active", "Closed", "Removed"},
+		stateCategories: make(map[string]string),
 		organizationURL: os.Getenv("AZURE_DEVOPS_ORG_URL"),
 		projectName:     os.Getenv("AZURE_DEVOPS_PROJECT"),
 		currentTab:      currentSprint,
@@ -135,8 +138,9 @@ type stateUpdatedMsg struct {
 }
 
 type statesLoadedMsg struct {
-	states []string
-	err    error
+	states          []string
+	stateCategories map[string]string
+	err             error
 }
 
 type sprintsLoadedMsg struct {
@@ -175,8 +179,8 @@ func loadInitialTasksForSprint(client *AzureDevOpsClient, sprintPath string, tab
 
 func loadWorkItemStates(client *AzureDevOpsClient, workItemType string) tea.Cmd {
 	return func() tea.Msg {
-		states, err := client.GetWorkItemTypeStates(workItemType)
-		return statesLoadedMsg{states: states, err: err}
+		states, categories, err := client.GetWorkItemTypeStates(workItemType)
+		return statesLoadedMsg{states: states, stateCategories: categories, err: err}
 	}
 }
 
@@ -570,6 +574,7 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.statusMessage = fmt.Sprintf("Error loading states: %v", msg.err)
 		} else {
 			m.availableStates = msg.states
+			m.stateCategories = msg.stateCategories
 			m.state = statePickerView
 			m.stateCursor = 0
 		}
@@ -783,6 +788,22 @@ func (m model) getRemainingCount() int {
 	return total - loaded
 }
 
+// getStateCategory returns the category for a given state name
+func (m model) getStateCategory(state string) string {
+	if category, ok := m.stateCategories[state]; ok {
+		return category
+	}
+	// Fallback: try to guess based on common patterns
+	stateLower := strings.ToLower(state)
+	if strings.Contains(stateLower, "closed") || strings.Contains(stateLower, "done") || strings.Contains(stateLower, "completed") {
+		return "Completed"
+	}
+	if strings.Contains(stateLower, "new") || strings.Contains(stateLower, "proposed") {
+		return "Proposed"
+	}
+	return "InProgress"
+}
+
 func (m model) getVisibleTasksCount() int {
 	// Get count of visible tasks in current sprint
 	sprint := m.sprints[m.currentTab]
@@ -833,8 +854,21 @@ func (m model) renderListView() string {
 		Foreground(lipgloss.Color("230")).
 		Bold(true)
 
-	stateStyle := lipgloss.NewStyle().
-		Foreground(lipgloss.Color("86"))
+	// State styles based on category
+	proposedStateStyle := lipgloss.NewStyle().
+		Foreground(lipgloss.Color("243")) // Normal gray
+
+	inProgressStateStyle := lipgloss.NewStyle().
+		Foreground(lipgloss.Color("86")). // Green
+		Bold(true)
+
+	completedStateStyle := lipgloss.NewStyle().
+		Foreground(lipgloss.Color("243")). // Dimmed gray
+		Italic(true)
+
+	removedStateStyle := lipgloss.NewStyle().
+		Foreground(lipgloss.Color("241")). // Very dim
+		Italic(true)
 
 	// Tab styles
 	activeTabStyle := lipgloss.NewStyle().
@@ -908,8 +942,6 @@ func (m model) renderListView() string {
 
 	// Style for tree edges
 	edgeStyle := lipgloss.NewStyle().Foreground(lipgloss.Color("240"))
-	// Style for parent items (bold)
-	parentTitleStyle := lipgloss.NewStyle().Bold(true)
 
 	for i, treeItem := range treeItems {
 		cursor := " "
@@ -920,11 +952,39 @@ func (m model) renderListView() string {
 		// Get tree drawing prefix and color it
 		treePrefix := edgeStyle.Render(getTreePrefix(treeItem))
 
+		// Get state category to determine styling
+		category := m.getStateCategory(treeItem.WorkItem.State)
+
+		// Choose state style based on category
+		var stateStyle lipgloss.Style
+		var titleStyle lipgloss.Style
+
+		switch category {
+		case "Proposed":
+			stateStyle = proposedStateStyle
+			titleStyle = lipgloss.NewStyle() // Normal
+		case "InProgress":
+			stateStyle = inProgressStateStyle
+			titleStyle = lipgloss.NewStyle() // Normal
+		case "Completed":
+			stateStyle = completedStateStyle
+			titleStyle = lipgloss.NewStyle().Strikethrough(true).Foreground(lipgloss.Color("243"))
+		case "Removed":
+			stateStyle = removedStateStyle
+			titleStyle = lipgloss.NewStyle().Strikethrough(true).Foreground(lipgloss.Color("241"))
+		default:
+			stateStyle = proposedStateStyle
+			titleStyle = lipgloss.NewStyle()
+		}
+
 		// Make title bold if this is a parent
 		title := treeItem.WorkItem.Title
 		if len(treeItem.WorkItem.Children) > 0 {
-			title = parentTitleStyle.Render(title)
+			title = lipgloss.NewStyle().Bold(true).Render(title)
 		}
+
+		// Apply the category-based styling
+		title = titleStyle.Render(title)
 
 		line := fmt.Sprintf("%s %s%s - %s",
 			cursor,
@@ -987,6 +1047,11 @@ func (m model) renderDetailView() string {
 		Foreground(lipgloss.Color("39")).
 		MarginBottom(1)
 
+	sectionStyle := lipgloss.NewStyle().
+		Bold(true).
+		Foreground(lipgloss.Color("205")).
+		MarginTop(1)
+
 	labelStyle := lipgloss.NewStyle().
 		Bold(true).
 		Foreground(lipgloss.Color("212"))
@@ -1019,9 +1084,16 @@ func (m model) renderDetailView() string {
 		s += labelStyle.Render("Last Updated: ") + valueStyle.Render(task.ChangedDate) + "\n"
 	}
 
+	// === DESCRIPTION ===
 	if task.Description != "" {
-		s += "\n" + labelStyle.Render("Description:") + "\n"
+		s += "\n" + sectionStyle.Render("Description") + "\n"
 		s += valueStyle.Render(task.Description) + "\n"
+	}
+
+	// === COMMENTS / HISTORY ===
+	if task.Comments != "" {
+		s += "\n" + sectionStyle.Render("Comments / Discussion") + "\n"
+		s += valueStyle.Render(task.Comments) + "\n"
 	}
 
 	helpStyle := lipgloss.NewStyle().
