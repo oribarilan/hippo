@@ -6,30 +6,40 @@ import (
 	"os"
 	"os/exec"
 	"strings"
+	"time"
 
 	"github.com/microsoft/azure-devops-go-api/azuredevops"
 	"github.com/microsoft/azure-devops-go-api/azuredevops/webapi"
+	"github.com/microsoft/azure-devops-go-api/azuredevops/work"
 	"github.com/microsoft/azure-devops-go-api/azuredevops/workitemtracking"
 )
 
 type AzureDevOpsClient struct {
 	connection      *azuredevops.Connection
 	workItemClient  workitemtracking.Client
+	workClient      work.Client
 	ctx             context.Context
 	organizationURL string
 	project         string
+	team            string
 }
 
 func NewAzureDevOpsClient() (*AzureDevOpsClient, error) {
 	// Read environment variables
 	organizationURL := os.Getenv("AZURE_DEVOPS_ORG_URL")
 	project := os.Getenv("AZURE_DEVOPS_PROJECT")
+	team := os.Getenv("AZURE_DEVOPS_TEAM")
 
 	if organizationURL == "" {
 		return nil, fmt.Errorf("AZURE_DEVOPS_ORG_URL environment variable is not set")
 	}
 	if project == "" {
 		return nil, fmt.Errorf("AZURE_DEVOPS_PROJECT environment variable is not set")
+	}
+
+	// If team is not set, default to project name
+	if team == "" {
+		team = project
 	}
 
 	// Get access token from Azure CLI
@@ -49,12 +59,20 @@ func NewAzureDevOpsClient() (*AzureDevOpsClient, error) {
 		return nil, fmt.Errorf("failed to create work item client: %w", err)
 	}
 
+	// Create work client for iterations
+	workClient, err := work.NewClient(ctx, connection)
+	if err != nil {
+		return nil, fmt.Errorf("failed to create work client: %w", err)
+	}
+
 	return &AzureDevOpsClient{
 		connection:      connection,
 		workItemClient:  workItemClient,
+		workClient:      workClient,
 		ctx:             ctx,
 		organizationURL: organizationURL,
 		project:         project,
+		team:            team,
 	}, nil
 }
 
@@ -80,24 +98,52 @@ func getAzureCliToken() (string, error) {
 }
 
 func (c *AzureDevOpsClient) GetWorkItems() ([]WorkItem, error) {
-	// Query for work items assigned to current user, ordered by recently updated
-	wiql := workitemtracking.Wiql{
-		Query: strPtr(fmt.Sprintf(`
-			SELECT [System.Id]
-			FROM WorkItems
-			WHERE [System.TeamProject] = '%s'
-			AND [System.AssignedTo] = @Me
-			AND [System.State] <> 'Closed'
-			AND [System.State] <> 'Removed'
-			ORDER BY [System.ChangedDate] DESC
-		`, c.project)),
+	return c.GetWorkItemsExcluding(nil, "", 30)
+}
+
+func (c *AzureDevOpsClient) GetWorkItemsForSprint(sprintPath string, excludeIDs []int, limit int) ([]WorkItem, error) {
+	return c.GetWorkItemsExcluding(excludeIDs, sprintPath, limit)
+}
+
+func (c *AzureDevOpsClient) GetWorkItemsExcluding(excludeIDs []int, sprintPath string, limit int) ([]WorkItem, error) {
+	// Cap limit at 30
+	if limit > 30 {
+		limit = 30
 	}
 
-	// Execute the query with Top parameter to limit results
-	top := 10
+	// Build the query
+	query := fmt.Sprintf(`
+		SELECT [System.Id]
+		FROM WorkItems
+		WHERE [System.TeamProject] = '%s'
+		AND [System.AssignedTo] = @Me
+		AND [System.State] <> 'Closed'
+		AND [System.State] <> 'Removed'`, c.project)
+
+	// Add sprint filter if provided
+	if sprintPath != "" {
+		query += fmt.Sprintf("\nAND [System.IterationPath] = '%s'", sprintPath)
+	}
+
+	// Add exclusion clause if there are IDs to exclude
+	if len(excludeIDs) > 0 {
+		// Convert IDs to string
+		var idStrs []string
+		for _, id := range excludeIDs {
+			idStrs = append(idStrs, fmt.Sprintf("%d", id))
+		}
+		query += fmt.Sprintf("\nAND [System.Id] NOT IN (%s)", strings.Join(idStrs, ","))
+	}
+
+	query += "\nORDER BY [System.ChangedDate] DESC"
+
+	wiql := workitemtracking.Wiql{
+		Query: strPtr(query),
+	}
+
 	queryArgs := workitemtracking.QueryByWiqlArgs{
 		Wiql: &wiql,
-		Top:  &top,
+		Top:  &limit,
 	}
 
 	result, err := c.workItemClient.QueryByWiql(c.ctx, queryArgs)
@@ -140,6 +186,45 @@ func (c *AzureDevOpsClient) GetWorkItems() ([]WorkItem, error) {
 	}
 
 	return tasks, nil
+}
+
+func (c *AzureDevOpsClient) GetWorkItemsCount() (int, error) {
+	return c.GetWorkItemsCountForSprint("")
+}
+
+func (c *AzureDevOpsClient) GetWorkItemsCountForSprint(sprintPath string) (int, error) {
+	// Query for total count of work items
+	query := fmt.Sprintf(`
+		SELECT [System.Id]
+		FROM WorkItems
+		WHERE [System.TeamProject] = '%s'
+		AND [System.AssignedTo] = @Me
+		AND [System.State] <> 'Closed'
+		AND [System.State] <> 'Removed'`, c.project)
+
+	// Add sprint filter if provided
+	if sprintPath != "" {
+		query += fmt.Sprintf("\nAND [System.IterationPath] = '%s'", sprintPath)
+	}
+
+	wiql := workitemtracking.Wiql{
+		Query: strPtr(query),
+	}
+
+	queryArgs := workitemtracking.QueryByWiqlArgs{
+		Wiql: &wiql,
+	}
+
+	result, err := c.workItemClient.QueryByWiql(c.ctx, queryArgs)
+	if err != nil {
+		return 0, fmt.Errorf("failed to query work items count: %w", err)
+	}
+
+	if result.WorkItems == nil {
+		return 0, nil
+	}
+
+	return len(*result.WorkItems), nil
 }
 
 func (c *AzureDevOpsClient) convertWorkItem(wi workitemtracking.WorkItem) WorkItem {
@@ -185,6 +270,10 @@ func (c *AzureDevOpsClient) convertWorkItem(wi workitemtracking.WorkItem) WorkIt
 
 	if changedDate, ok := fields["System.ChangedDate"].(string); ok {
 		task.ChangedDate = formatDate(changedDate)
+	}
+
+	if iterationPath, ok := fields["System.IterationPath"].(string); ok {
+		task.IterationPath = iterationPath
 	}
 
 	return task
@@ -309,4 +398,76 @@ func (c *AzureDevOpsClient) GetWorkItemTypeStates(workItemType string) ([]string
 	}
 
 	return states, nil
+}
+
+// GetTeamIterations fetches iterations for the team
+func (c *AzureDevOpsClient) GetTeamIterations() ([]work.TeamSettingsIteration, error) {
+	iterations, err := c.workClient.GetTeamIterations(c.ctx, work.GetTeamIterationsArgs{
+		Project: &c.project,
+		Team:    &c.team,
+	})
+
+	if err != nil {
+		return nil, fmt.Errorf("failed to get team iterations: %w", err)
+	}
+
+	if iterations == nil {
+		return []work.TeamSettingsIteration{}, nil
+	}
+
+	return *iterations, nil
+}
+
+// GetCurrentAndAdjacentSprints returns previous, current, and next sprint
+func (c *AzureDevOpsClient) GetCurrentAndAdjacentSprints() (prev, curr, next *work.TeamSettingsIteration, err error) {
+	iterations, err := c.GetTeamIterations()
+	if err != nil {
+		return nil, nil, nil, err
+	}
+
+	if len(iterations) == 0 {
+		return nil, nil, nil, nil
+	}
+
+	now := time.Now()
+	var currentIdx = -1
+
+	// Find current sprint
+	for i, iter := range iterations {
+		if iter.Attributes == nil {
+			continue
+		}
+
+		startDate := iter.Attributes.StartDate
+		finishDate := iter.Attributes.FinishDate
+
+		if startDate != nil && finishDate != nil {
+			start := startDate.Time
+			finish := finishDate.Time
+
+			if now.After(start) && now.Before(finish) {
+				currentIdx = i
+				curr = &iterations[i]
+				break
+			}
+		}
+	}
+
+	// If no current sprint found, use the most recent one
+	if currentIdx == -1 && len(iterations) > 0 {
+		currentIdx = len(iterations) - 1
+		curr = &iterations[currentIdx]
+	}
+
+	// Get previous sprint
+	if currentIdx > 0 {
+		prev = &iterations[currentIdx-1]
+	}
+
+	// Get next sprint
+	if currentIdx >= 0 && currentIdx < len(iterations)-1 {
+		next = &iterations[currentIdx+1]
+	}
+
+	return prev, curr, next, nil
 }

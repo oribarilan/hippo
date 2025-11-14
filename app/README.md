@@ -36,7 +36,10 @@ go mod download
 ```bash
 export AZURE_DEVOPS_ORG_URL="https://dev.azure.com/your-organization"
 export AZURE_DEVOPS_PROJECT="your-project-name"
+export AZURE_DEVOPS_TEAM="your-team-name"
 ```
+
+Note: If `AZURE_DEVOPS_TEAM` is not set, it defaults to the project name.
 
 To make this permanent, add these to your `~/.bashrc` or `~/.zshrc`.
 
@@ -75,6 +78,7 @@ You can create a `.env` file in the project root or set environment variables:
 ```
 AZURE_DEVOPS_ORG_URL=https://dev.azure.com/your-organization
 AZURE_DEVOPS_PROJECT=your-project-name
+AZURE_DEVOPS_TEAM=your-team-name
 ```
 
 The app uses Azure CLI for authentication, so no PAT is needed!
@@ -97,7 +101,7 @@ The app uses Azure CLI for authentication, so no PAT is needed!
 - Verify you have access to Azure DevOps
 
 ### "AZURE_DEVOPS_* environment variable is not set"
-Make sure you've exported both required environment variables (ORG_URL and PROJECT).
+Make sure you've exported both required environment variables (ORG_URL, PROJECT, and optionally TEAM).
 
 ### "failed to query work items"
 - Verify your organization URL is correct

@@ -24,6 +24,21 @@ const (
 	filterView
 )
 
+type sprintTab int
+
+const (
+	previousSprint sprintTab = iota
+	currentSprint
+	nextSprint
+)
+
+type Sprint struct {
+	Name      string
+	Path      string
+	StartDate string
+	EndDate   string
+}
+
 type model struct {
 	tasks           []WorkItem
 	filteredTasks   []WorkItem
@@ -42,19 +57,26 @@ type model struct {
 	projectName     string
 	searchActive    bool
 	statusMessage   string
+	currentTab      sprintTab
+	sprints         map[sprintTab]*Sprint
+	sprintCounts    map[sprintTab]int  // Total count per sprint
+	sprintLoaded    map[sprintTab]int  // Loaded count per sprint
+	sprintAttempted map[sprintTab]bool // Whether we've attempted to load this sprint
+	initialLoading  int                // Count of initial sprint loads pending
 }
 
 type WorkItem struct {
-	ID           int
-	Title        string
-	State        string
-	AssignedTo   string
-	WorkItemType string
-	Description  string
-	Tags         string
-	Priority     int
-	CreatedDate  string
-	ChangedDate  string
+	ID            int
+	Title         string
+	State         string
+	AssignedTo    string
+	WorkItemType  string
+	Description   string
+	Tags          string
+	Priority      int
+	CreatedDate   string
+	ChangedDate   string
+	IterationPath string
 }
 
 func initialModel() model {
@@ -82,13 +104,21 @@ func initialModel() model {
 		availableStates: []string{"New", "Active", "Closed", "Removed"},
 		organizationURL: os.Getenv("AZURE_DEVOPS_ORG_URL"),
 		projectName:     os.Getenv("AZURE_DEVOPS_PROJECT"),
+		currentTab:      currentSprint,
+		sprints:         make(map[sprintTab]*Sprint),
+		sprintCounts:    make(map[sprintTab]int),
+		sprintLoaded:    make(map[sprintTab]int),
+		sprintAttempted: make(map[sprintTab]bool),
 	}
 }
 
 type tasksLoadedMsg struct {
-	tasks  []WorkItem
-	err    error
-	client *AzureDevOpsClient
+	tasks      []WorkItem
+	err        error
+	client     *AzureDevOpsClient
+	totalCount int
+	append     bool
+	forTab     *sprintTab // Which tab these tasks are for
 }
 
 type stateUpdatedMsg struct {
@@ -100,17 +130,105 @@ type statesLoadedMsg struct {
 	err    error
 }
 
+type sprintsLoadedMsg struct {
+	previousSprint *Sprint
+	currentSprint  *Sprint
+	nextSprint     *Sprint
+	err            error
+	client         *AzureDevOpsClient
+}
+
 func loadTasks(client *AzureDevOpsClient) tea.Cmd {
+	return loadTasksForSprint(client, nil, "", 30, nil)
+}
+
+func loadTasksForSprint(client *AzureDevOpsClient, excludeIDs []int, sprintPath string, limit int, forTab *sprintTab) tea.Cmd {
 	return func() tea.Msg {
-		tasks, err := client.GetWorkItems()
-		return tasksLoadedMsg{tasks: tasks, err: err, client: client}
+		tasks, err := client.GetWorkItemsExcluding(excludeIDs, sprintPath, limit)
+		if err != nil {
+			return tasksLoadedMsg{err: err, append: len(excludeIDs) > 0, forTab: forTab}
+		}
+
+		totalCount, countErr := client.GetWorkItemsCountForSprint(sprintPath)
+		if countErr != nil {
+			// If count fails, just use the tasks we got
+			totalCount = len(tasks)
+		}
+
+		return tasksLoadedMsg{tasks: tasks, err: err, client: client, totalCount: totalCount, append: len(excludeIDs) > 0, forTab: forTab}
 	}
+}
+
+func loadInitialTasksForSprint(client *AzureDevOpsClient, sprintPath string, tab sprintTab) tea.Cmd {
+	tabCopy := tab
+	return loadTasksForSprint(client, nil, sprintPath, 10, &tabCopy)
 }
 
 func loadWorkItemStates(client *AzureDevOpsClient, workItemType string) tea.Cmd {
 	return func() tea.Msg {
 		states, err := client.GetWorkItemTypeStates(workItemType)
 		return statesLoadedMsg{states: states, err: err}
+	}
+}
+
+func loadSprints(client *AzureDevOpsClient) tea.Cmd {
+	return func() tea.Msg {
+		prev, curr, next, err := client.GetCurrentAndAdjacentSprints()
+
+		var prevSprint, currSprint, nextSprint *Sprint
+
+		if prev != nil && prev.Name != nil && prev.Path != nil {
+			prevSprint = &Sprint{
+				Name: *prev.Name,
+				Path: *prev.Path,
+			}
+			if prev.Attributes != nil {
+				if prev.Attributes.StartDate != nil {
+					prevSprint.StartDate = prev.Attributes.StartDate.Time.Format("2006-01-02")
+				}
+				if prev.Attributes.FinishDate != nil {
+					prevSprint.EndDate = prev.Attributes.FinishDate.Time.Format("2006-01-02")
+				}
+			}
+		}
+
+		if curr != nil && curr.Name != nil && curr.Path != nil {
+			currSprint = &Sprint{
+				Name: *curr.Name,
+				Path: *curr.Path,
+			}
+			if curr.Attributes != nil {
+				if curr.Attributes.StartDate != nil {
+					currSprint.StartDate = curr.Attributes.StartDate.Time.Format("2006-01-02")
+				}
+				if curr.Attributes.FinishDate != nil {
+					currSprint.EndDate = curr.Attributes.FinishDate.Time.Format("2006-01-02")
+				}
+			}
+		}
+
+		if next != nil && next.Name != nil && next.Path != nil {
+			nextSprint = &Sprint{
+				Name: *next.Name,
+				Path: *next.Path,
+			}
+			if next.Attributes != nil {
+				if next.Attributes.StartDate != nil {
+					nextSprint.StartDate = next.Attributes.StartDate.Time.Format("2006-01-02")
+				}
+				if next.Attributes.FinishDate != nil {
+					nextSprint.EndDate = next.Attributes.FinishDate.Time.Format("2006-01-02")
+				}
+			}
+		}
+
+		return sprintsLoadedMsg{
+			previousSprint: prevSprint,
+			currentSprint:  currSprint,
+			nextSprint:     nextSprint,
+			err:            err,
+			client:         client,
+		}
 	}
 }
 
@@ -128,7 +246,8 @@ func (m model) Init() tea.Cmd {
 			return tasksLoadedMsg{err: err}
 		}
 	}
-	return tea.Batch(loadTasks(client), m.spinner.Tick)
+	// Only load sprint info initially, then load tasks for each sprint
+	return tea.Batch(loadSprints(client), m.spinner.Tick)
 }
 
 func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
@@ -173,7 +292,7 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				m.filterInput.SetValue("")
 				if m.client != nil {
 					m.loading = true
-					return m, tea.Batch(loadTasks(m.client), m.spinner.Tick)
+					return m, tea.Batch(loadTasks(m.client), loadSprints(m.client), m.spinner.Tick)
 				}
 				return m, nil
 			default:
@@ -225,7 +344,7 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				m.searchActive = false
 				m.searchInput.SetValue("")
 				m.filteredTasks = nil
-				return m, tea.Batch(loadTasks(m.client), m.spinner.Tick)
+				return m, tea.Batch(loadTasks(m.client), loadSprints(m.client), m.spinner.Tick)
 			}
 			return m, nil
 
@@ -282,18 +401,85 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		// List view navigation
 		if m.state == listView {
 			switch msg.String() {
+			case "left", "h":
+				// Navigate to previous tab
+				if m.currentTab > previousSprint {
+					m.currentTab--
+					m.cursor = 0
+					// Load sprint data if not attempted yet
+					if !m.sprintAttempted[m.currentTab] && m.sprints[m.currentTab] != nil && m.client != nil {
+						sprint := m.sprints[m.currentTab]
+						m.loading = true
+						tab := m.currentTab
+						return m, tea.Batch(loadTasksForSprint(m.client, nil, sprint.Path, 10, &tab), m.spinner.Tick)
+					}
+				}
+			case "right", "l":
+				// Navigate to next tab
+				if m.currentTab < nextSprint {
+					m.currentTab++
+					m.cursor = 0
+					// Load sprint data if not attempted yet
+					if !m.sprintAttempted[m.currentTab] && m.sprints[m.currentTab] != nil && m.client != nil {
+						sprint := m.sprints[m.currentTab]
+						m.loading = true
+						tab := m.currentTab
+						return m, tea.Batch(loadTasksForSprint(m.client, nil, sprint.Path, 10, &tab), m.spinner.Tick)
+					}
+				}
+			case "tab":
+				// Cycle through tabs
+				m.currentTab = (m.currentTab + 1) % 3
+				m.cursor = 0
+				// Load sprint data if not attempted yet
+				if !m.sprintAttempted[m.currentTab] && m.sprints[m.currentTab] != nil && m.client != nil {
+					sprint := m.sprints[m.currentTab]
+					m.loading = true
+					tab := m.currentTab
+					return m, tea.Batch(loadTasksForSprint(m.client, nil, sprint.Path, 10, &tab), m.spinner.Tick)
+				}
 			case "up", "k":
 				if m.cursor > 0 {
 					m.cursor--
 				}
 			case "down", "j":
 				visibleTasks := m.getVisibleTasks()
-				if m.cursor < len(visibleTasks)-1 {
+				maxCursor := len(visibleTasks) - 1
+				// If there are more items to load, allow cursor to go to the "Load More" item
+				if m.hasMoreItems() {
+					maxCursor = len(visibleTasks)
+				}
+				if m.cursor < maxCursor {
 					m.cursor++
 				}
 			case "enter":
 				visibleTasks := m.getVisibleTasks()
-				if len(visibleTasks) > 0 {
+				// Check if cursor is on "Load More" item
+				if m.cursor == len(visibleTasks) && m.hasMoreItems() {
+					// Load more items by excluding already loaded IDs for current sprint
+					if m.client != nil {
+						m.loading = true
+						m.statusMessage = "Loading more items..."
+
+						// Get current sprint path
+						sprint := m.sprints[m.currentTab]
+						sprintPath := ""
+						if sprint != nil {
+							sprintPath = sprint.Path
+						}
+
+						// Collect all currently loaded IDs in this sprint to exclude
+						excludeIDs := make([]int, 0)
+						for _, task := range m.tasks {
+							if task.IterationPath == sprintPath {
+								excludeIDs = append(excludeIDs, task.ID)
+							}
+						}
+
+						tab := m.currentTab
+						return m, tea.Batch(loadTasksForSprint(m.client, excludeIDs, sprintPath, 30, &tab), m.spinner.Tick)
+					}
+				} else if len(visibleTasks) > 0 && m.cursor < len(visibleTasks) {
 					m.selectedTask = &visibleTasks[m.cursor]
 					m.state = detailView
 				}
@@ -309,14 +495,67 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 
 	case tasksLoadedMsg:
-		m.loading = false
-		m.statusMessage = ""
 		if msg.err != nil {
 			m.err = msg.err
+			m.statusMessage = ""
+			// If this was part of initial loading, decrement counter
+			if m.initialLoading > 0 {
+				m.initialLoading--
+				if m.initialLoading == 0 {
+					m.loading = false
+				}
+			} else {
+				m.loading = false
+			}
 		} else {
-			m.tasks = msg.tasks
-			m.filteredTasks = nil
-			m.cursor = 0
+			// Determine which tab these tasks are for
+			targetTab := m.currentTab
+			if msg.forTab != nil {
+				targetTab = *msg.forTab
+			}
+
+			if msg.append {
+				// Append new tasks to existing ones (load more scenario)
+				m.tasks = append(m.tasks, msg.tasks...)
+
+				// Update sprint-specific counts
+				// Add the new items count to the existing loaded count
+				m.sprintLoaded[targetTab] = m.sprintLoaded[targetTab] + len(msg.tasks)
+				m.sprintCounts[targetTab] = msg.totalCount
+
+				m.statusMessage = fmt.Sprintf("Loaded %d more items (%d of %d in this sprint)",
+					len(msg.tasks), m.sprintLoaded[targetTab], msg.totalCount)
+				m.loading = false
+			} else {
+				// Initial load or replace
+				if len(m.tasks) == 0 {
+					// Very first load
+					m.tasks = msg.tasks
+				} else {
+					// Append to existing (for other sprint loads)
+					m.tasks = append(m.tasks, msg.tasks...)
+				}
+				m.filteredTasks = nil
+				if targetTab == m.currentTab {
+					m.cursor = 0
+				}
+				m.statusMessage = ""
+
+				// All tasks in msg.tasks are for this sprint (filtered by API)
+				m.sprintLoaded[targetTab] = len(msg.tasks)
+				m.sprintCounts[targetTab] = msg.totalCount
+				m.sprintAttempted[targetTab] = true // Mark as attempted
+
+				// If this was part of initial loading, decrement counter
+				if m.initialLoading > 0 {
+					m.initialLoading--
+					if m.initialLoading == 0 {
+						m.loading = false
+					}
+				} else {
+					m.loading = false
+				}
+			}
 			// Store the client if it was passed
 			if msg.client != nil {
 				m.client = msg.client
@@ -335,7 +574,7 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			// Refresh the list
 			if m.client != nil {
 				m.loading = true
-				return m, tea.Batch(loadTasks(m.client), m.spinner.Tick)
+				return m, tea.Batch(loadTasks(m.client), loadSprints(m.client), m.spinner.Tick)
 			}
 		}
 
@@ -348,6 +587,49 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.availableStates = msg.states
 			m.state = statePickerView
 			m.stateCursor = 0
+		}
+
+	case sprintsLoadedMsg:
+		// Store client first
+		if msg.client != nil {
+			m.client = msg.client
+		}
+
+		if msg.err != nil {
+			m.statusMessage = fmt.Sprintf("Error loading sprints: %v", msg.err)
+		} else {
+			needsReload := len(m.sprints) == 0 // First time loading sprints
+
+			if msg.previousSprint != nil {
+				m.sprints[previousSprint] = msg.previousSprint
+			}
+			if msg.currentSprint != nil {
+				m.sprints[currentSprint] = msg.currentSprint
+			}
+			if msg.nextSprint != nil {
+				m.sprints[nextSprint] = msg.nextSprint
+			}
+
+			// If this is the first time we loaded sprints, load initial data for each sprint
+			if needsReload && m.client != nil {
+				var loadCmds []tea.Cmd
+
+				// Load 10 items for each sprint
+				sprintCount := 0
+				for tab, sprint := range m.sprints {
+					if sprint != nil {
+						loadCmds = append(loadCmds, loadInitialTasksForSprint(m.client, sprint.Path, tab))
+						sprintCount++
+					}
+				}
+
+				if len(loadCmds) > 0 {
+					m.loading = true
+					m.initialLoading = sprintCount // Track how many sprints we're loading
+					loadCmds = append(loadCmds, m.spinner.Tick)
+					return m, tea.Batch(loadCmds...)
+				}
+			}
 		}
 
 	case spinner.TickMsg:
@@ -378,10 +660,57 @@ func (m *model) filterSearch() {
 }
 
 func (m model) getVisibleTasks() []WorkItem {
+	tasks := m.tasks
+
+	// Apply search filter if active
 	if m.searchActive && m.filteredTasks != nil {
-		return m.filteredTasks
+		tasks = m.filteredTasks
 	}
-	return m.tasks
+
+	// Apply sprint filter
+	sprint := m.sprints[m.currentTab]
+	if sprint == nil || sprint.Path == "" {
+		// If no sprint data available, show all tasks
+		return tasks
+	}
+
+	var filtered []WorkItem
+	for _, task := range tasks {
+		if task.IterationPath == sprint.Path {
+			filtered = append(filtered, task)
+		}
+	}
+
+	return filtered
+}
+
+func (m model) hasMoreItems() bool {
+	// Check if there are more items in the current sprint that we haven't loaded yet
+	loaded := m.sprintLoaded[m.currentTab]
+	total := m.sprintCounts[m.currentTab]
+	return loaded < total
+}
+
+func (m model) getRemainingCount() int {
+	loaded := m.sprintLoaded[m.currentTab]
+	total := m.sprintCounts[m.currentTab]
+	return total - loaded
+}
+
+func (m model) getVisibleTasksCount() int {
+	// Get count of visible tasks in current sprint
+	sprint := m.sprints[m.currentTab]
+	if sprint == nil || sprint.Path == "" {
+		return len(m.tasks)
+	}
+
+	count := 0
+	for _, task := range m.tasks {
+		if task.IterationPath == sprint.Path {
+			count++
+		}
+	}
+	return count
 }
 
 func (m model) View() string {
@@ -421,15 +750,69 @@ func (m model) renderListView() string {
 	stateStyle := lipgloss.NewStyle().
 		Foreground(lipgloss.Color("86"))
 
+	// Tab styles
+	activeTabStyle := lipgloss.NewStyle().
+		Bold(true).
+		Foreground(lipgloss.Color("230")).
+		Background(lipgloss.Color("62")).
+		Padding(0, 2)
+
+	inactiveTabStyle := lipgloss.NewStyle().
+		Foreground(lipgloss.Color("241")).
+		Padding(0, 2)
+
 	title := "Azure DevOps - Work Items"
 	if m.searchActive {
 		title += fmt.Sprintf(" (filtered: %d results)", len(m.filteredTasks))
 	}
-	s := titleStyle.Render(title) + "\n\n"
+	s := titleStyle.Render(title) + "\n"
+
+	// Render tabs
+	tabs := []string{}
+
+	prevLabel := "Previous Sprint"
+	if sprint := m.sprints[previousSprint]; sprint != nil {
+		prevLabel = sprint.Name
+	}
+	if m.currentTab == previousSprint {
+		tabs = append(tabs, activeTabStyle.Render(prevLabel))
+	} else {
+		tabs = append(tabs, inactiveTabStyle.Render(prevLabel))
+	}
+
+	currLabel := "Current Sprint"
+	if sprint := m.sprints[currentSprint]; sprint != nil {
+		currLabel = sprint.Name
+	}
+	if m.currentTab == currentSprint {
+		tabs = append(tabs, activeTabStyle.Render(currLabel))
+	} else {
+		tabs = append(tabs, inactiveTabStyle.Render(currLabel))
+	}
+
+	nextLabel := "Next Sprint"
+	if sprint := m.sprints[nextSprint]; sprint != nil {
+		nextLabel = sprint.Name
+	}
+	if m.currentTab == nextSprint {
+		tabs = append(tabs, activeTabStyle.Render(nextLabel))
+	} else {
+		tabs = append(tabs, inactiveTabStyle.Render(nextLabel))
+	}
+
+	s += lipgloss.JoinHorizontal(lipgloss.Top, tabs...) + "\n\n"
 
 	if m.statusMessage != "" {
 		msgStyle := lipgloss.NewStyle().Foreground(lipgloss.Color("86"))
 		s += msgStyle.Render(m.statusMessage) + "\n\n"
+	}
+
+	// Show loading stats
+	loaded := m.sprintLoaded[m.currentTab]
+	total := m.sprintCounts[m.currentTab]
+	if total > 0 {
+		infoStyle := lipgloss.NewStyle().Foreground(lipgloss.Color("241")).Italic(true)
+		s += infoStyle.Render(fmt.Sprintf("Loaded %d of %d items in this sprint", loaded, total)) + "\n\n"
 	}
 
 	visibleTasks := m.getVisibleTasks()
@@ -452,11 +835,40 @@ func (m model) renderListView() string {
 		s += line + "\n"
 	}
 
+	// Add "Load More" or "Load All" item if there are more items
+	if m.hasMoreItems() {
+		remaining := m.getRemainingCount()
+		loadMoreStyle := lipgloss.NewStyle().
+			Foreground(lipgloss.Color("86")).
+			Italic(true)
+
+		cursor := " "
+		loadMoreIdx := len(visibleTasks)
+		if m.cursor == loadMoreIdx {
+			cursor = ">"
+		}
+
+		var loadMoreText string
+		if remaining > 30 {
+			loadMoreText = fmt.Sprintf("%s Load More (+30)", cursor)
+		} else {
+			loadMoreText = fmt.Sprintf("%s Load All (+%d)", cursor, remaining)
+		}
+
+		if m.cursor == loadMoreIdx {
+			loadMoreText = selectedStyle.Render(loadMoreText)
+		} else {
+			loadMoreText = loadMoreStyle.Render(loadMoreText)
+		}
+
+		s += loadMoreText + "\n"
+	}
+
 	helpStyle := lipgloss.NewStyle().
 		Foreground(lipgloss.Color("241")).
 		MarginTop(1)
 
-	s += helpStyle.Render("\n↑/↓ or j/k: navigate • enter: details • o: open in browser • s: change state\n/: search • f: filter • r: refresh • q: quit")
+	s += helpStyle.Render("\n←/→ or h/l: switch tabs • tab: cycle tabs • ↑/↓ or j/k: navigate items\nenter: details • o: open in browser • s: change state • /: search • f: filter • r: refresh • q: quit")
 
 	return s
 }
