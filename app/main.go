@@ -77,6 +77,15 @@ type WorkItem struct {
 	CreatedDate   string
 	ChangedDate   string
 	IterationPath string
+	ParentID      *int
+	Children      []*WorkItem
+}
+
+// TreeItem represents a flattened tree view item with depth information
+type TreeItem struct {
+	WorkItem *WorkItem
+	Depth    int
+	IsLast   []bool // Track if ancestor at each level is the last child
 }
 
 func initialModel() model {
@@ -353,8 +362,11 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			var workItemID int
 			if m.state == detailView && m.selectedTask != nil {
 				workItemID = m.selectedTask.ID
-			} else if m.state == listView && len(m.getVisibleTasks()) > 0 {
-				workItemID = m.getVisibleTasks()[m.cursor].ID
+			} else if m.state == listView {
+				treeItems := m.getVisibleTreeItems()
+				if len(treeItems) > 0 && m.cursor < len(treeItems) {
+					workItemID = treeItems[m.cursor].WorkItem.ID
+				}
 			}
 			if workItemID > 0 {
 				openInBrowser(m.organizationURL, m.projectName, workItemID)
@@ -362,16 +374,8 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			return m, nil
 
 		case "s":
-			// Change state - load states from API
-			if m.state == listView && len(m.getVisibleTasks()) > 0 && m.client != nil {
-				m.selectedTask = &m.getVisibleTasks()[m.cursor]
-				m.loading = true
-				m.statusMessage = "Loading states..."
-				return m, tea.Batch(
-					loadWorkItemStates(m.client, m.selectedTask.WorkItemType),
-					m.spinner.Tick,
-				)
-			} else if m.state == detailView && m.selectedTask != nil && m.client != nil {
+			// Change state - only in detail view
+			if m.state == detailView && m.selectedTask != nil && m.client != nil {
 				m.loading = true
 				m.statusMessage = "Loading states..."
 				return m, tea.Batch(
@@ -401,31 +405,12 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		// List view navigation
 		if m.state == listView {
 			switch msg.String() {
-			case "left", "h":
-				// Navigate to previous tab
-				if m.currentTab > previousSprint {
-					m.currentTab--
-					m.cursor = 0
-					// Load sprint data if not attempted yet
-					if !m.sprintAttempted[m.currentTab] && m.sprints[m.currentTab] != nil && m.client != nil {
-						sprint := m.sprints[m.currentTab]
-						m.loading = true
-						tab := m.currentTab
-						return m, tea.Batch(loadTasksForSprint(m.client, nil, sprint.Path, 10, &tab), m.spinner.Tick)
-					}
-				}
 			case "right", "l":
-				// Navigate to next tab
-				if m.currentTab < nextSprint {
-					m.currentTab++
-					m.cursor = 0
-					// Load sprint data if not attempted yet
-					if !m.sprintAttempted[m.currentTab] && m.sprints[m.currentTab] != nil && m.client != nil {
-						sprint := m.sprints[m.currentTab]
-						m.loading = true
-						tab := m.currentTab
-						return m, tea.Batch(loadTasksForSprint(m.client, nil, sprint.Path, 10, &tab), m.spinner.Tick)
-					}
+				// Drill down to detail view
+				treeItems := m.getVisibleTreeItems()
+				if len(treeItems) > 0 && m.cursor < len(treeItems) {
+					m.selectedTask = treeItems[m.cursor].WorkItem
+					m.state = detailView
 				}
 			case "tab":
 				// Cycle through tabs
@@ -443,19 +428,19 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 					m.cursor--
 				}
 			case "down", "j":
-				visibleTasks := m.getVisibleTasks()
-				maxCursor := len(visibleTasks) - 1
+				treeItems := m.getVisibleTreeItems()
+				maxCursor := len(treeItems) - 1
 				// If there are more items to load, allow cursor to go to the "Load More" item
 				if m.hasMoreItems() {
-					maxCursor = len(visibleTasks)
+					maxCursor = len(treeItems)
 				}
 				if m.cursor < maxCursor {
 					m.cursor++
 				}
 			case "enter":
-				visibleTasks := m.getVisibleTasks()
+				treeItems := m.getVisibleTreeItems()
 				// Check if cursor is on "Load More" item
-				if m.cursor == len(visibleTasks) && m.hasMoreItems() {
+				if m.cursor == len(treeItems) && m.hasMoreItems() {
 					// Load more items by excluding already loaded IDs for current sprint
 					if m.client != nil {
 						m.loading = true
@@ -479,8 +464,8 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 						tab := m.currentTab
 						return m, tea.Batch(loadTasksForSprint(m.client, excludeIDs, sprintPath, 30, &tab), m.spinner.Tick)
 					}
-				} else if len(visibleTasks) > 0 && m.cursor < len(visibleTasks) {
-					m.selectedTask = &visibleTasks[m.cursor]
+				} else if len(treeItems) > 0 && m.cursor < len(treeItems) {
+					m.selectedTask = treeItems[m.cursor].WorkItem
 					m.state = detailView
 				}
 			}
@@ -489,7 +474,7 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		// Detail view navigation
 		if m.state == detailView {
 			switch msg.String() {
-			case "esc", "backspace":
+			case "esc", "backspace", "left", "h":
 				m.state = listView
 			}
 		}
@@ -642,6 +627,93 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	return m, tea.Batch(cmds...)
 }
 
+// buildTreeStructure organizes work items into a parent-child hierarchy
+func buildTreeStructure(items []WorkItem) []*WorkItem {
+	// Create a map of all items by ID for quick lookup
+	itemMap := make(map[int]*WorkItem)
+	for i := range items {
+		itemMap[items[i].ID] = &items[i]
+		items[i].Children = nil // Reset children
+	}
+
+	// Build parent-child relationships and collect root items
+	var roots []*WorkItem
+	for i := range items {
+		item := &items[i]
+		if item.ParentID != nil {
+			// This item has a parent
+			if parent, exists := itemMap[*item.ParentID]; exists {
+				// Parent exists in our list, add as child
+				parent.Children = append(parent.Children, item)
+			} else {
+				// Parent not in our list, treat as root
+				roots = append(roots, item)
+			}
+		} else {
+			// No parent, this is a root item
+			roots = append(roots, item)
+		}
+	}
+
+	return roots
+}
+
+// flattenTree converts a tree structure into a flat list with depth information
+func flattenTree(roots []*WorkItem) []TreeItem {
+	var result []TreeItem
+
+	var traverse func(item *WorkItem, depth int, isLast []bool)
+	traverse = func(item *WorkItem, depth int, isLast []bool) {
+		result = append(result, TreeItem{
+			WorkItem: item,
+			Depth:    depth,
+			IsLast:   append([]bool{}, isLast...), // Copy the slice
+		})
+
+		// Recursively add children
+		for i, child := range item.Children {
+			// Create new isLast slice for this child
+			childIsLast := append([]bool{}, isLast...)
+			childIsLast = append(childIsLast, i == len(item.Children)-1)
+			traverse(child, depth+1, childIsLast)
+		}
+	}
+
+	for i, root := range roots {
+		isLast := []bool{i == len(roots)-1}
+		traverse(root, 0, isLast)
+	}
+
+	return result
+}
+
+// getTreePrefix returns the tree drawing prefix for a tree item
+func getTreePrefix(treeItem TreeItem) string {
+	if treeItem.Depth == 0 {
+		return ""
+	}
+
+	var prefix strings.Builder
+
+	// Draw vertical lines and spaces for each level except the last
+	for i := 0; i < treeItem.Depth-1; i++ {
+		if treeItem.IsLast[i] {
+			prefix.WriteString("    ") // No vertical line if parent was last
+		} else {
+			prefix.WriteString("│   ") // Vertical line if parent has more siblings
+		}
+	}
+
+	// Draw the connector for this item
+	if len(treeItem.IsLast) > 0 && treeItem.IsLast[len(treeItem.IsLast)-1] {
+		prefix.WriteString("└── ") // Last child
+	} else {
+		prefix.WriteString("├── ") // Not last child
+	}
+
+	return prefix.String()
+}
+
 func (m *model) filterSearch() {
 	query := strings.ToLower(m.searchInput.Value())
 	if query == "" {
@@ -682,6 +754,20 @@ func (m model) getVisibleTasks() []WorkItem {
 	}
 
 	return filtered
+}
+
+// getVisibleTreeItems returns visible tasks organized as a tree structure
+func (m model) getVisibleTreeItems() []TreeItem {
+	visibleTasks := m.getVisibleTasks()
+	if len(visibleTasks) == 0 {
+		return []TreeItem{}
+	}
+
+	// Build tree structure
+	roots := buildTreeStructure(visibleTasks)
+
+	// Flatten tree for display
+	return flattenTree(roots)
 }
 
 func (m model) hasMoreItems() bool {
@@ -815,18 +901,36 @@ func (m model) renderListView() string {
 		s += infoStyle.Render(fmt.Sprintf("Loaded %d of %d items in this sprint", loaded, total)) + "\n\n"
 	}
 
-	visibleTasks := m.getVisibleTasks()
-	if len(visibleTasks) == 0 {
+	treeItems := m.getVisibleTreeItems()
+	if len(treeItems) == 0 {
 		s += "  No tasks found.\n"
 	}
 
-	for i, task := range visibleTasks {
+	// Style for tree edges
+	edgeStyle := lipgloss.NewStyle().Foreground(lipgloss.Color("240"))
+	// Style for parent items (bold)
+	parentTitleStyle := lipgloss.NewStyle().Bold(true)
+
+	for i, treeItem := range treeItems {
 		cursor := " "
 		if m.cursor == i {
 			cursor = ">"
 		}
 
-		line := fmt.Sprintf("%s [%d] %s - %s", cursor, task.ID, task.Title, stateStyle.Render(task.State))
+		// Get tree drawing prefix and color it
+		treePrefix := edgeStyle.Render(getTreePrefix(treeItem))
+
+		// Make title bold if this is a parent
+		title := treeItem.WorkItem.Title
+		if len(treeItem.WorkItem.Children) > 0 {
+			title = parentTitleStyle.Render(title)
+		}
+
+		line := fmt.Sprintf("%s %s%s - %s",
+			cursor,
+			treePrefix,
+			title,
+			stateStyle.Render(treeItem.WorkItem.State))
 
 		if m.cursor == i {
 			line = selectedStyle.Render(line)
@@ -843,7 +947,7 @@ func (m model) renderListView() string {
 			Italic(true)
 
 		cursor := " "
-		loadMoreIdx := len(visibleTasks)
+		loadMoreIdx := len(treeItems)
 		if m.cursor == loadMoreIdx {
 			cursor = ">"
 		}
@@ -868,7 +972,7 @@ func (m model) renderListView() string {
 		Foreground(lipgloss.Color("241")).
 		MarginTop(1)
 
-	s += helpStyle.Render("\n←/→ or h/l: switch tabs • tab: cycle tabs • ↑/↓ or j/k: navigate items\nenter: details • o: open in browser • s: change state • /: search • f: filter • r: refresh • q: quit")
+	s += helpStyle.Render("\ntab: cycle tabs • →/l: details • ↑/↓ or j/k: navigate\nenter: details • o: open in browser • /: search • f: filter • r: refresh • q: quit")
 
 	return s
 }
@@ -924,7 +1028,7 @@ func (m model) renderDetailView() string {
 		Foreground(lipgloss.Color("241")).
 		MarginTop(1)
 
-	s += helpStyle.Render("\nesc/backspace: back • o: open in browser • s: change state • r: refresh • q: quit")
+	s += helpStyle.Render("\n←/h: back • o: open in browser • s: change state • r: refresh • q: quit")
 
 	return s
 }

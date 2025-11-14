@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"os"
 	"os/exec"
+	"strconv"
 	"strings"
 	"time"
 
@@ -274,6 +275,26 @@ func (c *AzureDevOpsClient) convertWorkItem(wi workitemtracking.WorkItem) WorkIt
 
 	if iterationPath, ok := fields["System.IterationPath"].(string); ok {
 		task.IterationPath = iterationPath
+	}
+
+	// Extract parent relationship from relations
+	if wi.Relations != nil {
+		for _, relation := range *wi.Relations {
+			if relation.Rel != nil && *relation.Rel == "System.LinkTypes.Hierarchy-Reverse" {
+				// This is a parent link
+				if relation.Url != nil {
+					// Extract parent ID from URL (format: .../workItems/{id})
+					parts := strings.Split(*relation.Url, "/")
+					if len(parts) > 0 {
+						parentIDStr := parts[len(parts)-1]
+						if parentID, err := strconv.Atoi(parentIDStr); err == nil {
+							task.ParentID = &parentID
+						}
+					}
+				}
+				break
+			}
+		}
 	}
 
 	return task
