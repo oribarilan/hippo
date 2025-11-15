@@ -778,7 +778,7 @@ func flattenTree(roots []*WorkItem) []TreeItem {
 	return result
 }
 
-// getTreePrefix returns the tree drawing prefix for a tree item
+// getTreePrefix returns the tree drawing prefix for a tree item with enhanced styling
 func getTreePrefix(treeItem TreeItem) string {
 	if treeItem.Depth == 0 {
 		return ""
@@ -795,14 +795,24 @@ func getTreePrefix(treeItem TreeItem) string {
 		}
 	}
 
-	// Draw the connector for this item
+	// Draw the connector for this item with rounded corners
 	if len(treeItem.IsLast) > 0 && treeItem.IsLast[len(treeItem.IsLast)-1] {
-		prefix.WriteString("└── ") // Last child
+		prefix.WriteString("╰── ") // Last child with rounded corner
 	} else {
 		prefix.WriteString("├── ") // Not last child
 	}
 
 	return prefix.String()
+}
+
+// getWorkItemIcon returns an icon based on the work item type
+func getWorkItemIcon(workItemType string) string {
+	switch strings.ToLower(workItemType) {
+	case "task":
+		return "✓"
+	default:
+		return "•"
+	}
 }
 
 func (m *model) filterSearch() {
@@ -938,7 +948,7 @@ func (m model) buildDetailContent() string {
 	// Description Section
 	if task.Description != "" {
 		content.WriteString("\n")
-		content.WriteString(sectionStyle.Render("📄 Description"))
+		content.WriteString(sectionStyle.Render("Description"))
 		content.WriteString("\n")
 		content.WriteString(boxStyle.Render(task.Description))
 		content.WriteString("\n")
@@ -947,7 +957,7 @@ func (m model) buildDetailContent() string {
 	// Comments / Discussion Section
 	if task.Comments != "" {
 		content.WriteString("\n")
-		content.WriteString(sectionStyle.Render("💬 Comments / Discussion"))
+		content.WriteString(sectionStyle.Render("Comments / Discussion"))
 		content.WriteString("\n")
 		content.WriteString(boxStyle.Render(task.Comments))
 		content.WriteString("\n")
@@ -1124,55 +1134,64 @@ func (m model) renderListView() string {
 		s += "  No tasks found.\n"
 	}
 
-	// Style for tree edges
-	edgeStyle := lipgloss.NewStyle().Foreground(lipgloss.Color("240"))
+	// Style for tree edges with more vibrant color
+	edgeStyle := lipgloss.NewStyle().Foreground(lipgloss.Color("63")) // Brighter blue-purple
+
+	// Icon style
+	iconStyle := lipgloss.NewStyle().Foreground(lipgloss.Color("212"))
 
 	for i, treeItem := range treeItems {
 		cursor := " "
 		if m.cursor == i {
-			cursor = ">"
+			cursor = "❯"
 		}
 
 		// Get tree drawing prefix and color it
 		treePrefix := edgeStyle.Render(getTreePrefix(treeItem))
+
+		// Get work item type icon
+		icon := getWorkItemIcon(treeItem.WorkItem.WorkItemType)
+		styledIcon := iconStyle.Render(icon)
 
 		// Get state category to determine styling
 		category := m.getStateCategory(treeItem.WorkItem.State)
 
 		// Choose state style based on category
 		var stateStyle lipgloss.Style
-		var titleStyle lipgloss.Style
+		var itemTitleStyle lipgloss.Style
 
 		switch category {
 		case "Proposed":
 			stateStyle = proposedStateStyle
-			titleStyle = lipgloss.NewStyle() // Normal
+			itemTitleStyle = lipgloss.NewStyle().Foreground(lipgloss.Color("248")) // Light gray
 		case "InProgress":
 			stateStyle = inProgressStateStyle
-			titleStyle = lipgloss.NewStyle() // Normal
+			itemTitleStyle = lipgloss.NewStyle().Foreground(lipgloss.Color("255")) // White
 		case "Completed":
 			stateStyle = completedStateStyle
-			titleStyle = lipgloss.NewStyle().Strikethrough(true).Foreground(lipgloss.Color("243"))
+			itemTitleStyle = lipgloss.NewStyle().Strikethrough(true).Foreground(lipgloss.Color("243"))
 		case "Removed":
 			stateStyle = removedStateStyle
-			titleStyle = lipgloss.NewStyle().Strikethrough(true).Foreground(lipgloss.Color("241"))
+			itemTitleStyle = lipgloss.NewStyle().Strikethrough(true).Foreground(lipgloss.Color("241"))
 		default:
 			stateStyle = proposedStateStyle
-			titleStyle = lipgloss.NewStyle()
+			itemTitleStyle = lipgloss.NewStyle().Foreground(lipgloss.Color("248"))
 		}
 
-		// Make title bold if this is a parent
+		// Make title bold if this is a parent (has children)
 		title := treeItem.WorkItem.Title
 		if len(treeItem.WorkItem.Children) > 0 {
-			title = lipgloss.NewStyle().Bold(true).Render(title)
+			itemTitleStyle = itemTitleStyle.Bold(true)
 		}
 
-		// Apply the category-based styling
-		title = titleStyle.Render(title)
+		// Apply the styling
+		title = itemTitleStyle.Render(title)
 
-		line := fmt.Sprintf("%s %s%s - %s",
+		// Build the line with icon
+		line := fmt.Sprintf("%s %s%s %s %s",
 			cursor,
 			treePrefix,
+			styledIcon,
 			title,
 			stateStyle.Render(treeItem.WorkItem.State))
 
@@ -1316,7 +1335,7 @@ func (m model) renderSearchView() string {
 		Italic(true)
 
 	// Header with search prompt
-	s := titleStyle.Render("🔍 Search") + "\n\n"
+	s := titleStyle.Render("Search") + "\n\n"
 	s += m.searchInput.View() + "\n\n"
 
 	treeItems := m.getVisibleTreeItems()
@@ -1340,18 +1359,25 @@ func (m model) renderSearchView() string {
 		endIdx = m.cursor + 1
 	}
 
-	// Style for tree edges
-	edgeStyle := lipgloss.NewStyle().Foreground(lipgloss.Color("240"))
+	// Style for tree edges with vibrant color
+	edgeStyle := lipgloss.NewStyle().Foreground(lipgloss.Color("63"))
+
+	// Icon style
+	iconStyle := lipgloss.NewStyle().Foreground(lipgloss.Color("212"))
 
 	for i := startIdx; i < endIdx && i < resultCount; i++ {
 		treeItem := treeItems[i]
 		cursor := "  "
 		if m.cursor == i {
-			cursor = "> "
+			cursor = "❯ "
 		}
 
 		// Get tree drawing prefix and color it
 		treePrefix := edgeStyle.Render(getTreePrefix(treeItem))
+
+		// Get work item type icon
+		icon := getWorkItemIcon(treeItem.WorkItem.WorkItemType)
+		styledIcon := iconStyle.Render(icon)
 
 		// Get state category to determine styling
 		category := m.getStateCategory(treeItem.WorkItem.State)
@@ -1363,10 +1389,10 @@ func (m model) renderSearchView() string {
 		switch category {
 		case "Proposed":
 			stateStyle = proposedStateStyle
-			itemTitleStyle = lipgloss.NewStyle()
+			itemTitleStyle = lipgloss.NewStyle().Foreground(lipgloss.Color("248"))
 		case "InProgress":
 			stateStyle = inProgressStateStyle
-			itemTitleStyle = lipgloss.NewStyle()
+			itemTitleStyle = lipgloss.NewStyle().Foreground(lipgloss.Color("255"))
 		case "Completed":
 			stateStyle = completedStateStyle
 			itemTitleStyle = lipgloss.NewStyle().Strikethrough(true).Foreground(lipgloss.Color("243"))
@@ -1375,21 +1401,22 @@ func (m model) renderSearchView() string {
 			itemTitleStyle = lipgloss.NewStyle().Strikethrough(true).Foreground(lipgloss.Color("241"))
 		default:
 			stateStyle = proposedStateStyle
-			itemTitleStyle = lipgloss.NewStyle()
+			itemTitleStyle = lipgloss.NewStyle().Foreground(lipgloss.Color("248"))
 		}
 
 		// Make title bold if this is a parent
 		title := treeItem.WorkItem.Title
 		if len(treeItem.WorkItem.Children) > 0 {
-			title = lipgloss.NewStyle().Bold(true).Render(title)
+			itemTitleStyle = itemTitleStyle.Bold(true)
 		}
 
 		// Apply the category-based styling
 		title = itemTitleStyle.Render(title)
 
-		line := fmt.Sprintf("%s%s%s - %s",
+		line := fmt.Sprintf("%s%s%s %s %s",
 			cursor,
 			treePrefix,
+			styledIcon,
 			title,
 			stateStyle.Render(treeItem.WorkItem.State))
 
