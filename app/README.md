@@ -12,11 +12,13 @@ A terminal user interface (TUI) for Azure DevOps task management, built with Go 
 - changelog generation
 - changelog support in-app
 - add license file (MIT)
-- add tests for key components
+- ✅ ~~add tests for key components~~ (Implemented - tree operations)
 - add CI for tests and linting
-- add code coverage reporting
+- ✅ ~~add code coverage reporting~~ (Implemented - `go test -cover`)
 - stylize the header bar
 - ascii art welcome?
+
+- justfile
 
 ## Features
 
@@ -87,6 +89,38 @@ Or run directly:
 go run .
 ```
 
+## Testing
+
+Hippo includes comprehensive unit tests and benchmarks for core functionality:
+
+```bash
+# Run all tests
+go test -v
+
+# Run specific test
+go test -run TestTreeCache -v
+
+# Run benchmarks
+go test -bench=. -benchmem
+
+# Compare cache performance
+go test -bench=BenchmarkTreeCacheVsNoCacheScrolling -benchmem
+
+# Check test coverage
+go test -cover
+
+# Generate coverage report
+go test -coverprofile=coverage.out
+go tool cover -html=coverage.out
+```
+
+The test suite includes:
+- Unit tests for tree building and flattening
+- Cache hit/miss verification tests
+- Cache invalidation tests across operations
+- Integration tests for multi-list caching
+- Performance benchmarks comparing cached vs uncached tree operations
+
 ## Keyboard Shortcuts
 
 ### List View
@@ -133,6 +167,7 @@ The app uses Azure CLI for authentication, so no PAT is needed!
 ```
 .
 ├── main.go       # Main application and Bubbletea UI logic
+├── main_test.go  # Unit tests and benchmarks for tree operations
 ├── client.go     # Azure DevOps API client
 ├── go.mod        # Go module definition
 ├── README.md     # This file

@@ -8,7 +8,8 @@ Quick reference for agents working on the Hippo codebase.
 - **Run:** `go run .` or `./hippo`
 - **Format:** `go fmt ./...` (required before commits)
 - **Lint:** `go vet ./...`
-- **Tests:** None currently - TUI requires manual testing
+- **Tests:** `go test -v` (unit tests for tree building/caching)
+- **Benchmarks:** `go test -bench=. -benchmem` (performance tests)
 
 ## Code Style
 
@@ -46,7 +47,40 @@ func (m model) renderSomeView() string {
 - View renderers: `main.go:1143-1700`
 - Layout helpers: `renderTitleBar()` at `main.go:1074`, `renderFooter()` at `main.go:1095`
 - Data models: `WorkItem`, `TreeItem`, `Sprint` at `main.go:39-102`
-- Tree building: `buildTreeStructure()`, `flattenTree()` at `main.go:758-816`
+- Tree building: `buildTreeStructure()`, `flattenTree()` at `main.go:1604-1662`
 - Detail card: `buildDetailContent()` at `main.go:973-1066`
+- Tree caching: `WorkItemList.treeCache`, `invalidateTreeCache()` at `main.go:156-168, 1856-1859`
+- Tests: `main_test.go` - unit, integration, and benchmark tests for tree operations
+
+## Testing
+
+**Test Coverage:**
+- Unit tests for tree building and flattening
+- Cache hit/miss verification tests
+- Cache invalidation tests across operations
+- Integration tests for multi-list caching
+- Benchmarks comparing cached vs uncached performance
+
+**Running Tests:**
+```bash
+# Run all tests with verbose output
+go test -v
+
+# Run specific test pattern
+go test -run TestCache -v
+
+# Run all benchmarks with memory stats
+go test -bench=. -benchmem
+
+# Compare cache vs no-cache performance
+go test -bench=BenchmarkTreeCacheVsNoCacheScrolling -benchmem
+
+# Show test coverage percentage
+go test -cover
+
+# Generate HTML coverage report
+go test -coverprofile=coverage.out
+go tool cover -html=coverage.out
+```
 
 See [README.md](./README.md) for detailed architecture and user documentation.

@@ -162,6 +162,9 @@ type WorkItemList struct {
 	loaded        int        // Number of items loaded so far
 	totalCount    int        // Total count from server
 	attempted     bool       // Whether we've attempted to load this list
+	// Cache fields for tree structure optimization
+	treeCache    []TreeItem // Cached tree structure to avoid rebuilding on every render
+	cacheVersion int        // Incremented when tasks change to invalidate cache
 }
 
 func initialModel() model {
@@ -1474,6 +1477,11 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			// Update the appropriate list
 			m.setCurrentTasks(tasks)
 
+			// Invalidate tree cache since task was updated
+			if list := m.getCurrentList(); list != nil {
+				list.invalidateTreeCache()
+			}
+
 			m.setActionLog(fmt.Sprintf("Refreshed #%d", msg.workItem.ID))
 		}
 
@@ -1710,6 +1718,8 @@ func (m *model) filterSearch() {
 		list.filterActive = false
 		// Also sync model-level filter state
 		m.filteredTasks = nil
+		// Invalidate cache when filter is cleared
+		list.invalidateTreeCache()
 		return
 	}
 
@@ -1724,6 +1734,8 @@ func (m *model) filterSearch() {
 	list.filterActive = true
 	// Also sync model-level filter state for backward compatibility
 	m.filteredTasks = filtered
+	// Invalidate cache when filter changes
+	list.invalidateTreeCache()
 }
 
 func (m model) getVisibleTasks() []WorkItem {
@@ -1761,17 +1773,37 @@ func (m model) getVisibleTasks() []WorkItem {
 }
 
 // getVisibleTreeItems returns visible tasks organized as a tree structure
+// Uses caching to avoid rebuilding the tree on every render
 func (m model) getVisibleTreeItems() []TreeItem {
+	list := m.getCurrentList()
+	if list == nil {
+		return []TreeItem{}
+	}
+
 	visibleTasks := m.getVisibleTasks()
 	if len(visibleTasks) == 0 {
 		return []TreeItem{}
 	}
 
-	// Build tree structure
-	roots := buildTreeStructure(visibleTasks)
+	// Check if we have a valid cache
+	// Cache is valid if it exists and the number of visible tasks hasn't changed
+	if list.treeCache != nil && len(list.treeCache) > 0 {
+		// Quick validation: check if task count matches
+		if len(visibleTasks) == countTreeItems(list.treeCache) {
+			return list.treeCache
+		}
+	}
 
-	// Flatten tree for display
-	return flattenTree(roots)
+	// Cache miss or invalid - rebuild tree structure
+	roots := buildTreeStructure(visibleTasks)
+	list.treeCache = flattenTree(roots)
+
+	return list.treeCache
+}
+
+// countTreeItems counts the total number of items in a tree
+func countTreeItems(items []TreeItem) int {
+	return len(items)
 }
 
 func (m model) hasMoreItems() bool {
@@ -1845,10 +1877,17 @@ func (wl *WorkItemList) getVisibleTasks() []WorkItem {
 	return wl.tasks
 }
 
+// invalidateTreeCache invalidates the cached tree structure
+func (wl *WorkItemList) invalidateTreeCache() {
+	wl.cacheVersion++
+	wl.treeCache = nil
+}
+
 // appendTasks adds new tasks to the list and updates loaded count
 func (wl *WorkItemList) appendTasks(tasks []WorkItem) {
 	wl.tasks = append(wl.tasks, tasks...)
 	wl.loaded = len(wl.tasks)
+	wl.invalidateTreeCache()
 }
 
 // replaceTasks replaces all tasks with new ones and updates counts
@@ -1857,6 +1896,7 @@ func (wl *WorkItemList) replaceTasks(tasks []WorkItem, totalCount int) {
 	wl.loaded = len(tasks)
 	wl.totalCount = totalCount
 	wl.attempted = true
+	wl.invalidateTreeCache()
 }
 
 // getCurrentList returns the currently active WorkItemList based on mode and tab
