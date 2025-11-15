@@ -125,6 +125,8 @@ type model struct {
 	// Batch selection fields
 	selectedItems       map[int]bool // Set of selected work item IDs
 	batchOperationCount int          // Track pending batch operations
+	// UI styles
+	styles Styles // Centralized styles for the application
 }
 
 type WorkItem struct {
@@ -225,6 +227,7 @@ func initialModel() model {
 		editFieldCount:       2, // Title and Description only
 		createInput:          createInput,
 		selectedItems:        make(map[int]bool),
+		styles:               NewStyles(),
 	}
 }
 
@@ -2019,84 +2022,56 @@ func (m model) buildDetailContent() string {
 
 	task := m.selectedTask
 
-	// Styles
-	cardStyle := lipgloss.NewStyle().
-		BorderStyle(lipgloss.RoundedBorder()).
-		BorderForeground(lipgloss.Color("62")).
-		Padding(1, 2).
-		Width(m.width - 4)
-
-	headerStyle := lipgloss.NewStyle().
-		Bold(true).
-		Foreground(lipgloss.Color("39")).
-		MarginBottom(1)
-
-	labelStyle := lipgloss.NewStyle().
-		Foreground(lipgloss.Color("241")).
-		Width(15)
-
-	valueStyle := lipgloss.NewStyle().
-		Foreground(lipgloss.Color("230"))
-
-	sectionStyle := lipgloss.NewStyle().
-		Bold(true).
-		Foreground(lipgloss.Color("205")).
-		MarginTop(1).
-		MarginBottom(1)
-
-	descriptionStyle := lipgloss.NewStyle().
-		Foreground(lipgloss.Color("248")).
-		Italic(true).
-		MarginTop(1).
-		MarginBottom(1)
+	// Use card style with dynamic width
+	cardStyle := m.styles.Card.Width(m.width - 4)
 
 	// Build the card content
 	var cardContent strings.Builder
 
 	// Header with ID and Title
-	cardContent.WriteString(headerStyle.Render(fmt.Sprintf("#%d - %s", task.ID, task.Title)))
+	cardContent.WriteString(m.styles.Header.Render(fmt.Sprintf("#%d - %s", task.ID, task.Title)))
 	cardContent.WriteString("\n\n")
 
 	// Parent info if exists
 	if parent := m.getParentTask(task); parent != nil {
-		cardContent.WriteString(labelStyle.Render("Parent:"))
-		cardContent.WriteString(valueStyle.Render(fmt.Sprintf("#%d - %s", parent.ID, parent.Title)))
+		cardContent.WriteString(m.styles.Label.Render("Parent:"))
+		cardContent.WriteString(m.styles.Value.Render(fmt.Sprintf("#%d - %s", parent.ID, parent.Title)))
 		cardContent.WriteString("\n")
 	}
 
 	// Basic Info
-	cardContent.WriteString(labelStyle.Render("Type:"))
-	cardContent.WriteString(valueStyle.Render(task.WorkItemType))
+	cardContent.WriteString(m.styles.Label.Render("Type:"))
+	cardContent.WriteString(m.styles.Value.Render(task.WorkItemType))
 	cardContent.WriteString("\n")
 
-	cardContent.WriteString(labelStyle.Render("State:"))
-	cardContent.WriteString(valueStyle.Render(task.State))
+	cardContent.WriteString(m.styles.Label.Render("State:"))
+	cardContent.WriteString(m.styles.Value.Render(task.State))
 	cardContent.WriteString("\n")
 
 	if task.AssignedTo != "" {
-		cardContent.WriteString(labelStyle.Render("Assigned To:"))
-		cardContent.WriteString(valueStyle.Render(task.AssignedTo))
+		cardContent.WriteString(m.styles.Label.Render("Assigned To:"))
+		cardContent.WriteString(m.styles.Value.Render(task.AssignedTo))
 		cardContent.WriteString("\n")
 	}
 
 	if task.Priority > 0 {
-		cardContent.WriteString(labelStyle.Render("Priority:"))
-		cardContent.WriteString(valueStyle.Render(fmt.Sprintf("%d", task.Priority)))
+		cardContent.WriteString(m.styles.Label.Render("Priority:"))
+		cardContent.WriteString(m.styles.Value.Render(fmt.Sprintf("%d", task.Priority)))
 		cardContent.WriteString("\n")
 	}
 
 	if task.Tags != "" {
-		cardContent.WriteString(labelStyle.Render("Tags:"))
-		cardContent.WriteString(valueStyle.Render(task.Tags))
+		cardContent.WriteString(m.styles.Label.Render("Tags:"))
+		cardContent.WriteString(m.styles.Value.Render(task.Tags))
 		cardContent.WriteString("\n")
 	}
 
 	if task.IterationPath != "" {
-		cardContent.WriteString(labelStyle.Render("Sprint:"))
+		cardContent.WriteString(m.styles.Label.Render("Sprint:"))
 		// Extract just the sprint name from the path
 		parts := strings.Split(task.IterationPath, "\\")
 		sprintName := parts[len(parts)-1]
-		cardContent.WriteString(valueStyle.Render(sprintName))
+		cardContent.WriteString(m.styles.Value.Render(sprintName))
 		cardContent.WriteString("\n")
 	}
 
@@ -2107,8 +2082,8 @@ func (m model) buildDetailContent() string {
 		if relativeTime != "" {
 			dateValue = fmt.Sprintf("%s %s", formattedDate, relativeTime)
 		}
-		cardContent.WriteString(labelStyle.Render("Created:"))
-		cardContent.WriteString(valueStyle.Render(dateValue))
+		cardContent.WriteString(m.styles.Label.Render("Created:"))
+		cardContent.WriteString(m.styles.Value.Render(dateValue))
 		cardContent.WriteString("\n")
 	}
 
@@ -2119,25 +2094,25 @@ func (m model) buildDetailContent() string {
 		if relativeTime != "" {
 			dateValue = fmt.Sprintf("%s %s", formattedDate, relativeTime)
 		}
-		cardContent.WriteString(labelStyle.Render("Last Updated:"))
-		cardContent.WriteString(valueStyle.Render(dateValue))
+		cardContent.WriteString(m.styles.Label.Render("Last Updated:"))
+		cardContent.WriteString(m.styles.Value.Render(dateValue))
 		cardContent.WriteString("\n")
 	}
 
 	// Description Section
 	if task.Description != "" {
 		cardContent.WriteString("\n")
-		cardContent.WriteString(sectionStyle.Render("Description"))
+		cardContent.WriteString(m.styles.Section.Render("Description"))
 		cardContent.WriteString("\n")
-		cardContent.WriteString(descriptionStyle.Render(task.Description))
+		cardContent.WriteString(m.styles.Description.Render(task.Description))
 	}
 
 	// Comments / Discussion Section
 	if task.Comments != "" {
 		cardContent.WriteString("\n")
-		cardContent.WriteString(sectionStyle.Render("Comments / Discussion"))
+		cardContent.WriteString(m.styles.Section.Render("Comments / Discussion"))
 		cardContent.WriteString("\n")
-		cardContent.WriteString(descriptionStyle.Render(task.Comments))
+		cardContent.WriteString(m.styles.Description.Render(task.Comments))
 	}
 
 	return cardStyle.Render(cardContent.String())
@@ -2276,12 +2251,8 @@ func (m model) renderLogLine() string {
 		return ""
 	}
 
-	logStyle := lipgloss.NewStyle().
-		Foreground(lipgloss.Color("241")).
-		Italic(true)
-
 	timestamp := m.lastActionTime.Format("15:04:05")
-	return logStyle.Render(fmt.Sprintf("[%s] %s", timestamp, m.lastActionLog))
+	return m.styles.Log.Render(fmt.Sprintf("[%s] %s", timestamp, m.lastActionLog))
 }
 
 // setActionLog sets the action log message with the current timestamp
@@ -2308,8 +2279,8 @@ func (m *model) focusEditField() {
 // renderTitleBar renders the title bar with the given title text
 func (m model) renderTitleBar(title string) string {
 	titleBarStyle := lipgloss.NewStyle().
-		Background(lipgloss.Color("62")).
-		Foreground(lipgloss.Color("230")).
+		Background(lipgloss.Color(ColorPurple)).
+		Foreground(lipgloss.Color(ColorWhite)).
 		Bold(true).
 		Width(m.width).
 		Padding(0, 1)
@@ -2337,16 +2308,11 @@ func (m model) renderFooter(keybindings string) string {
 	}
 
 	// Separator line
-	separatorStyle := lipgloss.NewStyle().
-		Foreground(lipgloss.Color("241")).
-		Width(m.width)
+	separatorStyle := m.styles.Separator.Width(m.width)
 	separator := separatorStyle.Render(strings.Repeat("─", m.width))
 
-	helpStyle := lipgloss.NewStyle().
-		Foreground(lipgloss.Color("241"))
-
 	footer.WriteString(separator + "\n")
-	footer.WriteString(helpStyle.Render(keybindings))
+	footer.WriteString(m.styles.Help.Render(keybindings))
 
 	return footer.String()
 }
@@ -2390,58 +2356,14 @@ func (m model) renderListView() string {
 	}
 	content.WriteString(m.renderTitleBar(title))
 
-	selectedStyle := lipgloss.NewStyle().
-		Background(lipgloss.Color("62")).
-		Foreground(lipgloss.Color("230")).
-		Bold(true)
-
-	// State styles based on category
-	proposedStateStyle := lipgloss.NewStyle().
-		Foreground(lipgloss.Color("243")) // Normal gray
-
-	inProgressStateStyle := lipgloss.NewStyle().
-		Foreground(lipgloss.Color("86")). // Green
-		Bold(true)
-
-	completedStateStyle := lipgloss.NewStyle().
-		Foreground(lipgloss.Color("243")). // Dimmed gray
-		Italic(true)
-
-	removedStateStyle := lipgloss.NewStyle().
-		Foreground(lipgloss.Color("241")). // Very dim
-		Italic(true)
-
-	// Mode and tab styles
-	activeModeStyle := lipgloss.NewStyle().
-		Bold(true).
-		Foreground(lipgloss.Color("230")).
-		Background(lipgloss.Color("62")).
-		Padding(0, 2).
-		MarginRight(1)
-
-	inactiveModeStyle := lipgloss.NewStyle().
-		Foreground(lipgloss.Color("241")).
-		Padding(0, 2).
-		MarginRight(1)
-
-	activeTabStyle := lipgloss.NewStyle().
-		Bold(true).
-		Foreground(lipgloss.Color("230")).
-		Background(lipgloss.Color("62")).
-		Padding(0, 2)
-
-	inactiveTabStyle := lipgloss.NewStyle().
-		Foreground(lipgloss.Color("241")).
-		Padding(0, 2)
-
 	// Render mode selector
 	modes := []string{}
 	if m.currentMode == sprintMode {
-		modes = append(modes, activeModeStyle.Render("[1] Sprint"))
-		modes = append(modes, inactiveModeStyle.Render("[2] Backlog"))
+		modes = append(modes, m.styles.ActiveMode.Render("[1] Sprint"))
+		modes = append(modes, m.styles.InactiveMode.Render("[2] Backlog"))
 	} else {
-		modes = append(modes, inactiveModeStyle.Render("[1] Sprint"))
-		modes = append(modes, activeModeStyle.Render("[2] Backlog"))
+		modes = append(modes, m.styles.InactiveMode.Render("[1] Sprint"))
+		modes = append(modes, m.styles.ActiveMode.Render("[2] Backlog"))
 	}
 	content.WriteString(lipgloss.JoinHorizontal(lipgloss.Top, modes...) + "\n\n")
 
@@ -2454,9 +2376,9 @@ func (m model) renderListView() string {
 			prevLabel = sprint.Name
 		}
 		if m.currentTab == previousSprint {
-			tabs = append(tabs, activeTabStyle.Render(prevLabel))
+			tabs = append(tabs, m.styles.ActiveTab.Render(prevLabel))
 		} else {
-			tabs = append(tabs, inactiveTabStyle.Render(prevLabel))
+			tabs = append(tabs, m.styles.InactiveTab.Render(prevLabel))
 		}
 
 		currLabel := "Current Sprint"
@@ -2464,9 +2386,9 @@ func (m model) renderListView() string {
 			currLabel = sprint.Name
 		}
 		if m.currentTab == currentSprint {
-			tabs = append(tabs, activeTabStyle.Render(currLabel))
+			tabs = append(tabs, m.styles.ActiveTab.Render(currLabel))
 		} else {
-			tabs = append(tabs, inactiveTabStyle.Render(currLabel))
+			tabs = append(tabs, m.styles.InactiveTab.Render(currLabel))
 		}
 
 		nextLabel := "Next Sprint"
@@ -2474,22 +2396,22 @@ func (m model) renderListView() string {
 			nextLabel = sprint.Name
 		}
 		if m.currentTab == nextSprint {
-			tabs = append(tabs, activeTabStyle.Render(nextLabel))
+			tabs = append(tabs, m.styles.ActiveTab.Render(nextLabel))
 		} else {
-			tabs = append(tabs, inactiveTabStyle.Render(nextLabel))
+			tabs = append(tabs, m.styles.InactiveTab.Render(nextLabel))
 		}
 	} else if m.currentMode == backlogMode {
 		// Backlog mode tabs
 		if m.currentBacklogTab == recentBacklog {
-			tabs = append(tabs, activeTabStyle.Render("Recent Backlog"))
+			tabs = append(tabs, m.styles.ActiveTab.Render("Recent Backlog"))
 		} else {
-			tabs = append(tabs, inactiveTabStyle.Render("Recent Backlog"))
+			tabs = append(tabs, m.styles.InactiveTab.Render("Recent Backlog"))
 		}
 
 		if m.currentBacklogTab == abandonedWork {
-			tabs = append(tabs, activeTabStyle.Render("Abandoned Work"))
+			tabs = append(tabs, m.styles.ActiveTab.Render("Abandoned Work"))
 		} else {
-			tabs = append(tabs, inactiveTabStyle.Render("Abandoned Work"))
+			tabs = append(tabs, m.styles.InactiveTab.Render("Abandoned Work"))
 		}
 	}
 
@@ -2497,23 +2419,16 @@ func (m model) renderListView() string {
 
 	// Show tab hint
 	if hint := m.getTabHint(); hint != "" {
-		hintStyle := lipgloss.NewStyle().
-			Foreground(lipgloss.Color("241")).
-			Italic(true)
-		content.WriteString(hintStyle.Render(hint) + "\n\n")
+		content.WriteString(m.styles.Hint.Render(hint) + "\n\n")
 	}
 
 	if m.statusMessage != "" {
-		msgStyle := lipgloss.NewStyle().Foreground(lipgloss.Color("86"))
-		content.WriteString(msgStyle.Render(m.statusMessage) + "\n\n")
+		content.WriteString(m.styles.StatusMsg.Render(m.statusMessage) + "\n\n")
 	}
 
 	// Show loader if loading (but not loadingMore - that shows inline)
 	if m.loading && !m.loadingMore {
-		loaderStyle := lipgloss.NewStyle().
-			Foreground(lipgloss.Color("86")).
-			MarginLeft(2)
-		content.WriteString(loaderStyle.Render(fmt.Sprintf("%s %s", m.spinner.View(), m.statusMessage)) + "\n\n")
+		content.WriteString(m.styles.Loader.Render(fmt.Sprintf("%s %s", m.spinner.View(), m.statusMessage)) + "\n\n")
 
 		// Footer with keybindings
 		keybindings := "tab: cycle tabs • →/l: details • ↑/↓ or j/k: navigate\nenter: details • o: open in browser • /: search • f: filter • r: refresh • q: quit"
@@ -2526,18 +2441,6 @@ func (m model) renderListView() string {
 	if len(treeItems) == 0 {
 		content.WriteString("  No tasks found.\n")
 	}
-
-	// Style for tree edges with more vibrant color
-	edgeStyle := lipgloss.NewStyle().Foreground(lipgloss.Color("63")) // Brighter blue-purple
-	edgeStyleSelected := lipgloss.NewStyle().
-		Foreground(lipgloss.Color("230")).
-		Background(lipgloss.Color("62"))
-
-	// Icon style
-	iconStyle := lipgloss.NewStyle().Foreground(lipgloss.Color("212"))
-	iconStyleSelected := lipgloss.NewStyle().
-		Foreground(lipgloss.Color("230")).
-		Background(lipgloss.Color("62"))
 
 	// Calculate visible range based on scroll offset
 	contentHeight := m.getContentHeight()
@@ -2562,9 +2465,6 @@ func (m model) renderListView() string {
 			// This is the "Load More" item
 			if m.hasMoreItems() {
 				remaining := m.getRemainingCount()
-				loadMoreStyle := lipgloss.NewStyle().
-					Foreground(lipgloss.Color("86")).
-					Italic(true)
 
 				cursor := " "
 				loadMoreIdx := len(treeItems)
@@ -2578,9 +2478,9 @@ func (m model) renderListView() string {
 				if m.loadingMore {
 					loadMoreText = fmt.Sprintf("%s %s Loading more items...", cursor, m.spinner.View())
 					if m.cursor == loadMoreIdx {
-						loadMoreText = selectedStyle.Render(loadMoreText)
+						loadMoreText = m.styles.Selected.Render(loadMoreText)
 					} else {
-						loadMoreText = loadMoreStyle.Render(loadMoreText)
+						loadMoreText = m.styles.LoadMore.Render(loadMoreText)
 					}
 				} else {
 					if remaining > 30 {
@@ -2590,9 +2490,9 @@ func (m model) renderListView() string {
 					}
 
 					if m.cursor == loadMoreIdx {
-						loadMoreText = selectedStyle.Render(loadMoreText)
+						loadMoreText = m.styles.Selected.Render(loadMoreText)
 					} else {
-						loadMoreText = loadMoreStyle.Render(loadMoreText)
+						loadMoreText = m.styles.LoadMore.Render(loadMoreText)
 					}
 				}
 
@@ -2613,69 +2513,32 @@ func (m model) renderListView() string {
 		// Orange bar for batch selected items - thicker bar
 		batchIndicator := "  "
 		if isBatchSelected {
-			orangeBarStyle := lipgloss.NewStyle().Foreground(lipgloss.Color("208")).Bold(true) // Orange, bold
-			batchIndicator = orangeBarStyle.Render("█ ")                                       // Block character for thicker bar
+			batchIndicator = m.styles.BatchIndicator.Render("█ ") // Block character for thicker bar
 		}
 
 		// Get tree drawing prefix and color it
 		var treePrefix string
 		if isSelected {
-			treePrefix = edgeStyleSelected.Render(getTreePrefix(treeItem))
+			treePrefix = m.styles.TreeEdgeSelected.Render(getTreePrefix(treeItem))
 		} else {
-			treePrefix = edgeStyle.Render(getTreePrefix(treeItem))
+			treePrefix = m.styles.TreeEdge.Render(getTreePrefix(treeItem))
 		}
 
 		// Get work item type icon
 		icon := getWorkItemIcon(treeItem.WorkItem.WorkItemType)
 		var styledIcon string
 		if isSelected {
-			styledIcon = iconStyleSelected.Render(icon)
+			styledIcon = m.styles.IconSelected.Render(icon)
 		} else {
-			styledIcon = iconStyle.Render(icon)
+			styledIcon = m.styles.Icon.Render(icon)
 		}
 
 		// Get state category to determine styling
 		category := m.getStateCategory(treeItem.WorkItem.State)
 
-		// Choose state style based on category and selection
-		var stateStyle lipgloss.Style
-		var itemTitleStyle lipgloss.Style
-
-		if isSelected {
-			// When selected, use bright colors with selected background
-			stateStyle = lipgloss.NewStyle().
-				Foreground(lipgloss.Color("230")).
-				Background(lipgloss.Color("62")).
-				Bold(true)
-			itemTitleStyle = lipgloss.NewStyle().
-				Foreground(lipgloss.Color("230")).
-				Background(lipgloss.Color("62")).
-				Bold(true)
-		} else {
-			// Normal styling when not selected
-			switch category {
-			case "Proposed":
-				stateStyle = proposedStateStyle
-				itemTitleStyle = lipgloss.NewStyle().Foreground(lipgloss.Color("248")) // Light gray
-			case "InProgress":
-				stateStyle = inProgressStateStyle
-				itemTitleStyle = lipgloss.NewStyle().Foreground(lipgloss.Color("255")) // White
-			case "Completed":
-				stateStyle = completedStateStyle
-				itemTitleStyle = lipgloss.NewStyle().Strikethrough(true).Foreground(lipgloss.Color("243"))
-			case "Removed":
-				stateStyle = removedStateStyle
-				itemTitleStyle = lipgloss.NewStyle().Strikethrough(true).Foreground(lipgloss.Color("241"))
-			default:
-				stateStyle = proposedStateStyle
-				itemTitleStyle = lipgloss.NewStyle().Foreground(lipgloss.Color("248"))
-			}
-
-			// Make title bold if this is a parent (has children)
-			if len(treeItem.WorkItem.Children) > 0 {
-				itemTitleStyle = itemTitleStyle.Bold(true)
-			}
-		}
+		// Get styles based on category and selection
+		stateStyle := m.styles.GetStateStyle(category, isSelected)
+		itemTitleStyle := m.styles.GetItemTitleStyle(category, isSelected, len(treeItem.WorkItem.Children) > 0)
 
 		// Apply the styling
 		taskTitle := itemTitleStyle.Render(treeItem.WorkItem.Title)
@@ -2685,8 +2548,8 @@ func (m model) renderListView() string {
 		var line string
 		if isSelected {
 			// Apply background to cursor and spacing too
-			cursorStyled := selectedStyle.Render(cursor)
-			spacer := selectedStyle.Render(" ")
+			cursorStyled := m.styles.Selected.Render(cursor)
+			spacer := m.styles.Selected.Render(" ")
 			line = fmt.Sprintf("%s%s%s%s%s%s%s%s",
 				batchIndicator,
 				cursorStyled,
@@ -2788,39 +2651,15 @@ func (m model) renderFilterView() string {
 	content.WriteString(m.renderTitleBar(titleText))
 	content.WriteString(m.filterInput.View() + "\n\n")
 
-	selectedStyle := lipgloss.NewStyle().
-		Background(lipgloss.Color("62")).
-		Foreground(lipgloss.Color("230")).
-		Bold(true)
-
-	dimStyle := lipgloss.NewStyle().
-		Foreground(lipgloss.Color("241"))
-
-	// State styles based on category
-	proposedStateStyle := lipgloss.NewStyle().
-		Foreground(lipgloss.Color("243"))
-
-	inProgressStateStyle := lipgloss.NewStyle().
-		Foreground(lipgloss.Color("86")).
-		Bold(true)
-
-	completedStateStyle := lipgloss.NewStyle().
-		Foreground(lipgloss.Color("243")).
-		Italic(true)
-
-	removedStateStyle := lipgloss.NewStyle().
-		Foreground(lipgloss.Color("241")).
-		Italic(true)
-
 	treeItems := m.getVisibleTreeItems()
 	resultCount := len(treeItems)
 
 	// Show result count
 	currentTasks := m.getCurrentTasks()
 	if m.filterInput.Value() != "" {
-		content.WriteString(dimStyle.Render(fmt.Sprintf("  %d/%d", resultCount, len(currentTasks))) + "\n\n")
+		content.WriteString(m.styles.Dim.Render(fmt.Sprintf("  %d/%d", resultCount, len(currentTasks))) + "\n\n")
 	} else {
-		content.WriteString(dimStyle.Render(fmt.Sprintf("  %d items", len(currentTasks))) + "\n\n")
+		content.WriteString(m.styles.Dim.Render(fmt.Sprintf("  %d items", len(currentTasks))) + "\n\n")
 	}
 
 	// Display results (limit to 15 visible items for performance)
@@ -2834,18 +2673,6 @@ func (m model) renderFilterView() string {
 		endIdx = m.cursor + 1
 	}
 
-	// Style for tree edges with vibrant color
-	edgeStyle := lipgloss.NewStyle().Foreground(lipgloss.Color("63"))
-	edgeStyleSelected := lipgloss.NewStyle().
-		Foreground(lipgloss.Color("230")).
-		Background(lipgloss.Color("62"))
-
-	// Icon style
-	iconStyle := lipgloss.NewStyle().Foreground(lipgloss.Color("212"))
-	iconStyleSelected := lipgloss.NewStyle().
-		Foreground(lipgloss.Color("230")).
-		Background(lipgloss.Color("62"))
-
 	for i := startIdx; i < endIdx && i < resultCount; i++ {
 		treeItem := treeItems[i]
 		isSelected := m.cursor == i
@@ -2858,62 +2685,26 @@ func (m model) renderFilterView() string {
 		// Get tree drawing prefix and color it
 		var treePrefix string
 		if isSelected {
-			treePrefix = edgeStyleSelected.Render(getTreePrefix(treeItem))
+			treePrefix = m.styles.TreeEdgeSelected.Render(getTreePrefix(treeItem))
 		} else {
-			treePrefix = edgeStyle.Render(getTreePrefix(treeItem))
+			treePrefix = m.styles.TreeEdge.Render(getTreePrefix(treeItem))
 		}
 
 		// Get work item type icon
 		icon := getWorkItemIcon(treeItem.WorkItem.WorkItemType)
 		var styledIcon string
 		if isSelected {
-			styledIcon = iconStyleSelected.Render(icon)
+			styledIcon = m.styles.IconSelected.Render(icon)
 		} else {
-			styledIcon = iconStyle.Render(icon)
+			styledIcon = m.styles.Icon.Render(icon)
 		}
 
 		// Get state category to determine styling
 		category := m.getStateCategory(treeItem.WorkItem.State)
 
-		// Choose state style based on category and selection
-		var stateStyle lipgloss.Style
-		var itemTitleStyle lipgloss.Style
-
-		if isSelected {
-			// When selected, use bright colors with selected background
-			stateStyle = lipgloss.NewStyle().
-				Foreground(lipgloss.Color("230")).
-				Background(lipgloss.Color("62")).
-				Bold(true)
-			itemTitleStyle = lipgloss.NewStyle().
-				Foreground(lipgloss.Color("230")).
-				Background(lipgloss.Color("62")).
-				Bold(true)
-		} else {
-			// Normal styling when not selected
-			switch category {
-			case "Proposed":
-				stateStyle = proposedStateStyle
-				itemTitleStyle = lipgloss.NewStyle().Foreground(lipgloss.Color("248"))
-			case "InProgress":
-				stateStyle = inProgressStateStyle
-				itemTitleStyle = lipgloss.NewStyle().Foreground(lipgloss.Color("255"))
-			case "Completed":
-				stateStyle = completedStateStyle
-				itemTitleStyle = lipgloss.NewStyle().Strikethrough(true).Foreground(lipgloss.Color("243"))
-			case "Removed":
-				stateStyle = removedStateStyle
-				itemTitleStyle = lipgloss.NewStyle().Strikethrough(true).Foreground(lipgloss.Color("241"))
-			default:
-				stateStyle = proposedStateStyle
-				itemTitleStyle = lipgloss.NewStyle().Foreground(lipgloss.Color("248"))
-			}
-
-			// Make title bold if this is a parent
-			if len(treeItem.WorkItem.Children) > 0 {
-				itemTitleStyle = itemTitleStyle.Bold(true)
-			}
-		}
+		// Get styles based on category and selection
+		stateStyle := m.styles.GetStateStyle(category, isSelected)
+		itemTitleStyle := m.styles.GetItemTitleStyle(category, isSelected, len(treeItem.WorkItem.Children) > 0)
 
 		// Apply the styling
 		taskTitle := itemTitleStyle.Render(treeItem.WorkItem.Title)
@@ -2923,8 +2714,8 @@ func (m model) renderFilterView() string {
 		var line string
 		if isSelected {
 			// Apply background to cursor and spacing too
-			cursorStyled := selectedStyle.Render(cursor)
-			spacer := selectedStyle.Render(" ")
+			cursorStyled := m.styles.Selected.Render(cursor)
+			spacer := m.styles.Selected.Render(" ")
 			line = fmt.Sprintf("%s%s%s%s%s%s",
 				cursorStyled,
 				treePrefix,
@@ -2947,7 +2738,7 @@ func (m model) renderFilterView() string {
 	// Show scroll indicator if there are more items
 	if resultCount > maxVisible {
 		if endIdx < resultCount {
-			content.WriteString(dimStyle.Render(fmt.Sprintf("  ... %d more ...", resultCount-endIdx)) + "\n")
+			content.WriteString(m.styles.Dim.Render(fmt.Sprintf("  ... %d more ...", resultCount-endIdx)) + "\n")
 		}
 	}
 
