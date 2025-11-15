@@ -6,6 +6,7 @@ import (
 	"os/exec"
 	"runtime"
 	"strings"
+	"time"
 
 	"github.com/charmbracelet/bubbles/spinner"
 	"github.com/charmbracelet/bubbles/textinput"
@@ -62,12 +63,16 @@ type model struct {
 	projectName     string
 	searchActive    bool
 	statusMessage   string
+	lastActionLog   string    // Log line showing the result of the last action
+	lastActionTime  time.Time // Timestamp of the last action
 	currentTab      sprintTab
 	sprints         map[sprintTab]*Sprint
 	sprintCounts    map[sprintTab]int  // Total count per sprint
 	sprintLoaded    map[sprintTab]int  // Loaded count per sprint
 	sprintAttempted map[sprintTab]bool // Whether we've attempted to load this sprint
 	initialLoading  int                // Count of initial sprint loads pending
+	width           int                // Terminal width
+	height          int                // Terminal height
 }
 
 type WorkItem struct {
@@ -273,6 +278,10 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 	switch msg := msg.(type) {
 	case tea.WindowSizeMsg:
+		// Store window dimensions
+		m.width = msg.Width
+		m.height = msg.Height
+
 		// Initialize viewport when we know the window size
 		if !m.viewportReady {
 			m.viewport = viewport.New(msg.Width, msg.Height-5) // Reserve space for header/footer
@@ -414,6 +423,7 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			if m.client != nil {
 				m.loading = true
 				m.statusMessage = "Refreshing..."
+				m.setActionLog("Refreshing data...")
 				m.searchActive = false
 				m.searchInput.SetValue("")
 				m.filteredTasks = nil
@@ -434,6 +444,7 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			}
 			if workItemID > 0 {
 				openInBrowser(m.organizationURL, m.projectName, workItemID)
+				m.setActionLog(fmt.Sprintf("Opened #%d in browser", workItemID))
 			}
 			return m, nil
 
@@ -578,6 +589,8 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				m.initialLoading--
 				if m.initialLoading == 0 {
 					m.loading = false
+					// Set log message after all initial sprints are loaded
+					m.setActionLog("Loaded previous, current, and next sprint")
 				}
 			} else {
 				m.loading = false
@@ -600,6 +613,7 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 				m.statusMessage = fmt.Sprintf("Loaded %d more items (%d of %d in this sprint)",
 					len(msg.tasks), m.sprintLoaded[targetTab], msg.totalCount)
+				m.setActionLog(fmt.Sprintf("Loaded %d more items", len(msg.tasks)))
 				m.loading = false
 			} else {
 				// Initial load or replace
@@ -626,9 +640,13 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 					m.initialLoading--
 					if m.initialLoading == 0 {
 						m.loading = false
+						// Set log message after all initial sprints are loaded
+						m.setActionLog("Loaded previous, current, and next sprint")
 					}
 				} else {
 					m.loading = false
+					// Only set individual load message if not part of initial loading
+					m.setActionLog(fmt.Sprintf("Loaded %d items", len(msg.tasks)))
 				}
 			}
 			// Store the client if it was passed
@@ -640,12 +658,29 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case stateUpdatedMsg:
 		m.loading = false
 		m.statusMessage = ""
+		oldState := ""
+		taskTitle := ""
+		if m.selectedTask != nil {
+			oldState = m.selectedTask.State
+			taskTitle = m.selectedTask.Title
+		}
+		newState := ""
+		if m.stateCursor < len(m.availableStates) {
+			newState = m.availableStates[m.stateCursor]
+		}
+
 		m.state = listView
 		m.stateCursor = 0
 		if msg.err != nil {
 			m.statusMessage = fmt.Sprintf("Error updating state: %v", msg.err)
+			m.setActionLog(fmt.Sprintf("Error updating state: %v", msg.err))
 		} else {
 			m.statusMessage = "State updated successfully!"
+			if taskTitle != "" && oldState != "" && newState != "" {
+				m.setActionLog(fmt.Sprintf("Updated \"%s\": %s → %s", taskTitle, oldState, newState))
+			} else {
+				m.setActionLog("State updated successfully")
+			}
 			// Refresh the list
 			if m.client != nil {
 				m.loading = true
@@ -1014,6 +1049,26 @@ func (m model) getVisibleTasksCount() int {
 	return count
 }
 
+// renderLogLine renders the action log line if there is one
+func (m model) renderLogLine() string {
+	if m.lastActionLog == "" {
+		return ""
+	}
+
+	logStyle := lipgloss.NewStyle().
+		Foreground(lipgloss.Color("241")).
+		Italic(true)
+
+	timestamp := m.lastActionTime.Format("15:04:05")
+	return logStyle.Render(fmt.Sprintf("[%s] %s", timestamp, m.lastActionLog))
+}
+
+// setActionLog sets the action log message with the current timestamp
+func (m *model) setActionLog(message string) {
+	m.lastActionLog = message
+	m.lastActionTime = time.Now()
+}
+
 func (m model) View() string {
 	if m.loading {
 		return fmt.Sprintf("\n  %s %s\n\n", m.spinner.View(), m.statusMessage)
@@ -1038,10 +1093,13 @@ func (m model) View() string {
 }
 
 func (m model) renderListView() string {
-	titleStyle := lipgloss.NewStyle().
+	// Title bar style - full width background
+	titleBarStyle := lipgloss.NewStyle().
+		Background(lipgloss.Color("62")).
+		Foreground(lipgloss.Color("230")).
 		Bold(true).
-		Foreground(lipgloss.Color("39")).
-		MarginBottom(1)
+		Width(m.width).
+		Padding(0, 1)
 
 	selectedStyle := lipgloss.NewStyle().
 		Background(lipgloss.Color("62")).
@@ -1075,11 +1133,12 @@ func (m model) renderListView() string {
 		Foreground(lipgloss.Color("241")).
 		Padding(0, 2)
 
+	// Title bar
 	title := "Azure DevOps - Work Items"
 	if m.searchActive {
 		title += fmt.Sprintf(" (filtered: %d results)", len(m.filteredTasks))
 	}
-	s := titleStyle.Render(title) + "\n"
+	s := titleBarStyle.Render(title) + "\n\n"
 
 	// Render tabs
 	tabs := []string{}
@@ -1273,11 +1332,22 @@ func (m model) renderListView() string {
 		s += loadMoreText + "\n"
 	}
 
-	helpStyle := lipgloss.NewStyle().
-		Foreground(lipgloss.Color("241")).
-		MarginTop(1)
+	// Action log line
+	s += "\n"
+	if m.lastActionLog != "" {
+		s += m.renderLogLine() + "\n"
+	}
 
-	s += helpStyle.Render("\ntab: cycle tabs • →/l: details • ↑/↓ or j/k: navigate\nenter: details • o: open in browser • /: search • f: filter • r: refresh • q: quit")
+	// Separator line
+	separatorStyle := lipgloss.NewStyle().
+		Foreground(lipgloss.Color("241")).
+		Width(m.width)
+	separator := separatorStyle.Render(strings.Repeat("─", m.width))
+
+	helpStyle := lipgloss.NewStyle().
+		Foreground(lipgloss.Color("241"))
+
+	s += separator + "\n" + helpStyle.Render("tab: cycle tabs • →/l: details • ↑/↓ or j/k: navigate\nenter: details • o: open in browser • /: search • f: filter • r: refresh • q: quit")
 
 	return s
 }
@@ -1293,6 +1363,16 @@ func (m model) renderDetailView() string {
 		return "Loading..."
 	}
 
+	// Title bar style - full width
+	titleBarStyle := lipgloss.NewStyle().
+		Background(lipgloss.Color("62")).
+		Foreground(lipgloss.Color("230")).
+		Bold(true).
+		Width(m.width).
+		Padding(0, 1)
+
+	titleBar := titleBarStyle.Render(fmt.Sprintf("Work Item #%d - %s", m.selectedTask.ID, m.selectedTask.Title))
+
 	// Help footer
 	helpStyle := lipgloss.NewStyle().
 		Foreground(lipgloss.Color("241")).
@@ -1303,21 +1383,35 @@ func (m model) renderDetailView() string {
 	// Render the viewport with scrollbar info
 	scrollInfo := helpStyle.Render(fmt.Sprintf(" %3.f%%", m.viewport.ScrollPercent()*100))
 
-	return fmt.Sprintf("%s\n%s\n%s", m.viewport.View(), scrollInfo, help)
+	// Action log line
+	logLine := ""
+	if m.lastActionLog != "" {
+		logLine = m.renderLogLine() + "\n"
+	}
+
+	// Separator line
+	separatorStyle := lipgloss.NewStyle().
+		Foreground(lipgloss.Color("241")).
+		Width(m.width)
+	separator := separatorStyle.Render(strings.Repeat("─", m.width))
+
+	return fmt.Sprintf("%s\n\n%s\n%s\n%s%s\n%s", titleBar, m.viewport.View(), scrollInfo, logLine, separator, help)
 }
 
 func (m model) renderStatePickerView() string {
-	titleStyle := lipgloss.NewStyle().
+	titleBarStyle := lipgloss.NewStyle().
+		Background(lipgloss.Color("62")).
+		Foreground(lipgloss.Color("230")).
 		Bold(true).
-		Foreground(lipgloss.Color("39")).
-		MarginBottom(1)
+		Width(m.width).
+		Padding(0, 1)
 
 	selectedStyle := lipgloss.NewStyle().
 		Background(lipgloss.Color("62")).
 		Foreground(lipgloss.Color("230")).
 		Bold(true)
 
-	s := titleStyle.Render("Select New State") + "\n\n"
+	s := titleBarStyle.Render("Select New State") + "\n\n"
 
 	if m.selectedTask != nil {
 		s += fmt.Sprintf("Current state: %s\n\n", m.selectedTask.State)
@@ -1338,19 +1432,34 @@ func (m model) renderStatePickerView() string {
 		s += line + "\n"
 	}
 
-	helpStyle := lipgloss.NewStyle().
-		Foreground(lipgloss.Color("241")).
-		MarginTop(1)
+	// Action log line
+	if m.lastActionLog != "" {
+		s += "\n" + m.renderLogLine() + "\n"
+	} else {
+		s += "\n"
+	}
 
-	s += helpStyle.Render("\n↑/↓ or j/k: navigate • enter: select • esc: cancel")
+	// Separator line
+	separatorStyle := lipgloss.NewStyle().
+		Foreground(lipgloss.Color("241")).
+		Width(m.width)
+	separator := separatorStyle.Render(strings.Repeat("─", m.width))
+
+	helpStyle := lipgloss.NewStyle().
+		Foreground(lipgloss.Color("241"))
+
+	s += separator + "\n" + helpStyle.Render("↑/↓ or j/k: navigate • enter: select • esc: cancel")
 
 	return s
 }
 
 func (m model) renderSearchView() string {
-	titleStyle := lipgloss.NewStyle().
+	titleBarStyle := lipgloss.NewStyle().
+		Background(lipgloss.Color("62")).
+		Foreground(lipgloss.Color("230")).
 		Bold(true).
-		Foreground(lipgloss.Color("39"))
+		Width(m.width).
+		Padding(0, 1)
 
 	selectedStyle := lipgloss.NewStyle().
 		Background(lipgloss.Color("62")).
@@ -1376,8 +1485,8 @@ func (m model) renderSearchView() string {
 		Foreground(lipgloss.Color("241")).
 		Italic(true)
 
-	// Header with search prompt
-	s := titleStyle.Render("Search") + "\n\n"
+	// Title bar with search prompt
+	s := titleBarStyle.Render("Search") + "\n\n"
 	s += m.searchInput.View() + "\n\n"
 
 	treeItems := m.getVisibleTreeItems()
@@ -1518,32 +1627,58 @@ func (m model) renderSearchView() string {
 		}
 	}
 
-	helpStyle := lipgloss.NewStyle().
-		Foreground(lipgloss.Color("241")).
-		MarginTop(1)
+	// Action log line
+	if m.lastActionLog != "" {
+		s += "\n" + m.renderLogLine() + "\n"
+	} else {
+		s += "\n"
+	}
 
-	s += helpStyle.Render("\n↑/↓ or ctrl+j/k: navigate • ctrl+d/u: half page • enter: open detail • esc: cancel")
+	// Separator line
+	separatorStyle := lipgloss.NewStyle().
+		Foreground(lipgloss.Color("241")).
+		Width(m.width)
+	separator := separatorStyle.Render(strings.Repeat("─", m.width))
+
+	helpStyle := lipgloss.NewStyle().
+		Foreground(lipgloss.Color("241"))
+
+	s += separator + "\n" + helpStyle.Render("↑/↓ or ctrl+j/k: navigate • ctrl+d/u: half page • enter: open detail • esc: cancel")
 
 	return s
 }
 
 func (m model) renderFilterView() string {
-	titleStyle := lipgloss.NewStyle().
+	titleBarStyle := lipgloss.NewStyle().
+		Background(lipgloss.Color("62")).
+		Foreground(lipgloss.Color("230")).
 		Bold(true).
-		Foreground(lipgloss.Color("39")).
-		MarginBottom(1)
+		Width(m.width).
+		Padding(0, 1)
 
-	s := titleStyle.Render("Filter Work Items") + "\n\n"
+	s := titleBarStyle.Render("Filter Work Items") + "\n\n"
 	s += m.filterInput.View() + "\n\n"
 	s += "Examples:\n"
 	s += "  - Press Enter to query all items\n"
 	s += "  - (Custom filters coming soon)\n"
 
-	helpStyle := lipgloss.NewStyle().
-		Foreground(lipgloss.Color("241")).
-		MarginTop(1)
+	// Action log line
+	if m.lastActionLog != "" {
+		s += "\n" + m.renderLogLine() + "\n"
+	} else {
+		s += "\n"
+	}
 
-	s += helpStyle.Render("\nenter: apply filter • esc: cancel")
+	// Separator line
+	separatorStyle := lipgloss.NewStyle().
+		Foreground(lipgloss.Color("241")).
+		Width(m.width)
+	separator := separatorStyle.Render(strings.Repeat("─", m.width))
+
+	helpStyle := lipgloss.NewStyle().
+		Foreground(lipgloss.Color("241"))
+
+	s += separator + "\n" + helpStyle.Render("enter: apply filter • esc: cancel")
 
 	return s
 }
@@ -1571,7 +1706,7 @@ func main() {
 	// Load .env file if it exists (ignore error if it doesn't)
 	_ = godotenv.Load()
 
-	p := tea.NewProgram(initialModel())
+	p := tea.NewProgram(initialModel(), tea.WithAltScreen())
 	if _, err := p.Run(); err != nil {
 		fmt.Printf("Error: %v", err)
 		os.Exit(1)
