@@ -9,6 +9,7 @@ import (
 
 	"github.com/charmbracelet/bubbles/spinner"
 	"github.com/charmbracelet/bubbles/textinput"
+	"github.com/charmbracelet/bubbles/viewport"
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
 	"github.com/joho/godotenv"
@@ -45,12 +46,15 @@ type model struct {
 	cursor          int
 	state           viewState
 	selectedTask    *WorkItem
+	selectedTaskID  int // Track which task the viewport is showing
 	loading         bool
 	err             error
 	client          *AzureDevOpsClient
 	spinner         spinner.Model
 	searchInput     textinput.Model
 	filterInput     textinput.Model
+	viewport        viewport.Model
+	viewportReady   bool
 	stateCursor     int
 	availableStates []string
 	stateCategories map[string]string // Map of state name to category (Proposed, InProgress, Completed, etc.)
@@ -268,6 +272,17 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	var cmds []tea.Cmd
 
 	switch msg := msg.(type) {
+	case tea.WindowSizeMsg:
+		// Initialize viewport when we know the window size
+		if !m.viewportReady {
+			m.viewport = viewport.New(msg.Width, msg.Height-5) // Reserve space for header/footer
+			m.viewport.YPosition = 0
+			m.viewportReady = true
+		} else {
+			m.viewport.Width = msg.Width
+			m.viewport.Height = msg.Height - 5
+		}
+
 	case tea.KeyMsg:
 		// Handle search input
 		if m.state == searchView {
@@ -280,13 +295,58 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				m.cursor = 0
 				return m, nil
 			case "enter":
-				m.state = listView
-				m.searchActive = true
-				m.cursor = 0
+				// If there are results, open the selected item in detail view
+				if len(m.filteredTasks) > 0 && m.cursor < len(m.filteredTasks) {
+					// Get the filtered tasks as tree items to respect the cursor position
+					visibleTasks := m.getVisibleTasks()
+					if len(visibleTasks) > 0 && m.cursor < len(visibleTasks) {
+						treeItems := m.getVisibleTreeItems()
+						if m.cursor < len(treeItems) {
+							m.selectedTask = treeItems[m.cursor].WorkItem
+							m.selectedTaskID = m.selectedTask.ID
+							m.state = detailView
+							m.searchActive = true
+							// Reset viewport and set content when entering detail view
+							if m.viewportReady {
+								m.viewport.GotoTop()
+								m.viewport.SetContent(m.buildDetailContent())
+							}
+						}
+					}
+				} else {
+					// Just close search and keep filter active
+					m.state = listView
+					m.searchActive = true
+					m.cursor = 0
+				}
+				return m, nil
+			case "up", "ctrl+k", "ctrl+p":
+				// Navigate up in filtered results
+				if m.cursor > 0 {
+					m.cursor--
+				}
+				return m, nil
+			case "down", "ctrl+j", "ctrl+n":
+				// Navigate down in filtered results
+				treeItems := m.getVisibleTreeItems()
+				if m.cursor < len(treeItems)-1 {
+					m.cursor++
+				}
+				return m, nil
+			case "ctrl+u":
+				// Jump up half page
+				m.cursor = max(0, m.cursor-10)
+				return m, nil
+			case "ctrl+d":
+				// Jump down half page
+				treeItems := m.getVisibleTreeItems()
+				m.cursor = min(len(treeItems)-1, m.cursor+10)
 				return m, nil
 			default:
 				m.searchInput, cmd = m.searchInput.Update(msg)
 				m.filterSearch()
+				// Reset cursor when search changes
+				m.cursor = 0
 				return m, cmd
 			}
 		}
@@ -394,6 +454,8 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			if m.state == listView {
 				m.state = searchView
 				m.searchInput.Focus()
+				m.searchActive = true // Activate search immediately
+				m.cursor = 0
 			}
 			return m, nil
 
@@ -414,7 +476,13 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				treeItems := m.getVisibleTreeItems()
 				if len(treeItems) > 0 && m.cursor < len(treeItems) {
 					m.selectedTask = treeItems[m.cursor].WorkItem
+					m.selectedTaskID = m.selectedTask.ID
 					m.state = detailView
+					// Reset viewport and set content when entering detail view
+					if m.viewportReady {
+						m.viewport.GotoTop()
+						m.viewport.SetContent(m.buildDetailContent())
+					}
 				}
 			case "tab":
 				// Cycle through tabs
@@ -470,7 +538,13 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 					}
 				} else if len(treeItems) > 0 && m.cursor < len(treeItems) {
 					m.selectedTask = treeItems[m.cursor].WorkItem
+					m.selectedTaskID = m.selectedTask.ID
 					m.state = detailView
+					// Reset viewport and set content when entering detail view
+					if m.viewportReady {
+						m.viewport.GotoTop()
+						m.viewport.SetContent(m.buildDetailContent())
+					}
 				}
 			}
 		}
@@ -480,6 +554,18 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			switch msg.String() {
 			case "esc", "backspace", "left", "h":
 				m.state = listView
+			case "up", "k":
+				m.viewport.LineUp(1)
+			case "down", "j":
+				m.viewport.LineDown(1)
+			case "pgup", "b":
+				m.viewport.ViewUp()
+			case "pgdown", "f", " ":
+				m.viewport.ViewDown()
+			case "home", "g":
+				m.viewport.GotoTop()
+			case "end", "G":
+				m.viewport.GotoBottom()
 			}
 		}
 
@@ -788,6 +874,104 @@ func (m model) getRemainingCount() int {
 	return total - loaded
 }
 
+// buildDetailContent creates the content string for the detail viewport
+func (m model) buildDetailContent() string {
+	if m.selectedTask == nil {
+		return ""
+	}
+
+	titleStyle := lipgloss.NewStyle().
+		Bold(true).
+		Foreground(lipgloss.Color("39"))
+
+	sectionStyle := lipgloss.NewStyle().
+		Bold(true).
+		Foreground(lipgloss.Color("205")).
+		MarginTop(1).
+		MarginBottom(1)
+
+	labelStyle := lipgloss.NewStyle().
+		Bold(true).
+		Foreground(lipgloss.Color("212"))
+
+	valueStyle := lipgloss.NewStyle().
+		Foreground(lipgloss.Color("230"))
+
+	boxStyle := lipgloss.NewStyle().
+		BorderStyle(lipgloss.RoundedBorder()).
+		BorderForeground(lipgloss.Color("62")).
+		Padding(1, 2)
+
+	task := m.selectedTask
+
+	// Build the content string
+	var content strings.Builder
+
+	// Header
+	content.WriteString(titleStyle.Render(fmt.Sprintf("Work Item #%d", task.ID)))
+	content.WriteString("\n\n")
+
+	// Basic Info
+	content.WriteString(labelStyle.Render("Title: ") + valueStyle.Render(task.Title) + "\n")
+	content.WriteString(labelStyle.Render("Type: ") + valueStyle.Render(task.WorkItemType) + "\n")
+	content.WriteString(labelStyle.Render("State: ") + valueStyle.Render(task.State) + "\n")
+	if task.AssignedTo != "" {
+		content.WriteString(labelStyle.Render("Assigned To: ") + valueStyle.Render(task.AssignedTo) + "\n")
+	}
+
+	if task.Priority > 0 {
+		content.WriteString(labelStyle.Render("Priority: ") + valueStyle.Render(fmt.Sprintf("%d", task.Priority)) + "\n")
+	}
+
+	if task.Tags != "" {
+		content.WriteString(labelStyle.Render("Tags: ") + valueStyle.Render(task.Tags) + "\n")
+	}
+
+	if task.CreatedDate != "" {
+		content.WriteString(labelStyle.Render("Created: ") + valueStyle.Render(task.CreatedDate) + "\n")
+	}
+
+	if task.ChangedDate != "" {
+		content.WriteString(labelStyle.Render("Last Updated: ") + valueStyle.Render(task.ChangedDate) + "\n")
+	}
+
+	// Description Section
+	if task.Description != "" {
+		content.WriteString("\n")
+		content.WriteString(sectionStyle.Render("📄 Description"))
+		content.WriteString("\n")
+		content.WriteString(boxStyle.Render(task.Description))
+		content.WriteString("\n")
+	}
+
+	// Comments / Discussion Section
+	if task.Comments != "" {
+		content.WriteString("\n")
+		content.WriteString(sectionStyle.Render("💬 Comments / Discussion"))
+		content.WriteString("\n")
+		content.WriteString(boxStyle.Render(task.Comments))
+		content.WriteString("\n")
+	}
+
+	return content.String()
+}
+
+// min returns the minimum of two integers
+func min(a, b int) int {
+	if a < b {
+		return a
+	}
+	return b
+}
+
+// max returns the maximum of two integers
+func max(a, b int) int {
+	if a > b {
+		return a
+	}
+	return b
+}
+
 // getStateCategory returns the category for a given state name
 func (m model) getStateCategory(state string) string {
 	if category, ok := m.stateCategories[state]; ok {
@@ -1042,67 +1226,23 @@ func (m model) renderDetailView() string {
 		return "No task selected"
 	}
 
-	titleStyle := lipgloss.NewStyle().
-		Bold(true).
-		Foreground(lipgloss.Color("39")).
-		MarginBottom(1)
-
-	sectionStyle := lipgloss.NewStyle().
-		Bold(true).
-		Foreground(lipgloss.Color("205")).
-		MarginTop(1)
-
-	labelStyle := lipgloss.NewStyle().
-		Bold(true).
-		Foreground(lipgloss.Color("212"))
-
-	valueStyle := lipgloss.NewStyle().
-		Foreground(lipgloss.Color("230"))
-
-	task := m.selectedTask
-
-	s := titleStyle.Render(fmt.Sprintf("Work Item #%d", task.ID)) + "\n\n"
-
-	s += labelStyle.Render("Title: ") + valueStyle.Render(task.Title) + "\n"
-	s += labelStyle.Render("Type: ") + valueStyle.Render(task.WorkItemType) + "\n"
-	s += labelStyle.Render("State: ") + valueStyle.Render(task.State) + "\n"
-	s += labelStyle.Render("Assigned To: ") + valueStyle.Render(task.AssignedTo) + "\n"
-
-	if task.Priority > 0 {
-		s += labelStyle.Render("Priority: ") + valueStyle.Render(fmt.Sprintf("%d", task.Priority)) + "\n"
+	// If viewport isn't ready or content needs updating, build and set it
+	if !m.viewportReady || m.selectedTaskID != m.selectedTask.ID {
+		// Content will be set when entering detail view in Update()
+		return "Loading..."
 	}
 
-	if task.Tags != "" {
-		s += labelStyle.Render("Tags: ") + valueStyle.Render(task.Tags) + "\n"
-	}
-
-	if task.CreatedDate != "" {
-		s += labelStyle.Render("Created: ") + valueStyle.Render(task.CreatedDate) + "\n"
-	}
-
-	if task.ChangedDate != "" {
-		s += labelStyle.Render("Last Updated: ") + valueStyle.Render(task.ChangedDate) + "\n"
-	}
-
-	// === DESCRIPTION ===
-	if task.Description != "" {
-		s += "\n" + sectionStyle.Render("Description") + "\n"
-		s += valueStyle.Render(task.Description) + "\n"
-	}
-
-	// === COMMENTS / HISTORY ===
-	if task.Comments != "" {
-		s += "\n" + sectionStyle.Render("Comments / Discussion") + "\n"
-		s += valueStyle.Render(task.Comments) + "\n"
-	}
-
+	// Help footer
 	helpStyle := lipgloss.NewStyle().
 		Foreground(lipgloss.Color("241")).
-		MarginTop(1)
+		Faint(true)
 
-	s += helpStyle.Render("\n←/h: back • o: open in browser • s: change state • r: refresh • q: quit")
+	help := helpStyle.Render("↑/↓ j/k: scroll • pgup/pgdn: page • home/end: top/bottom • ←/h: back • o: open • s: change state • q: quit")
 
-	return s
+	// Render the viewport with scrollbar info
+	scrollInfo := helpStyle.Render(fmt.Sprintf(" %3.f%%", m.viewport.ScrollPercent()*100))
+
+	return fmt.Sprintf("%s\n%s\n%s", m.viewport.View(), scrollInfo, help)
 }
 
 func (m model) renderStatePickerView() string {
@@ -1149,21 +1289,129 @@ func (m model) renderStatePickerView() string {
 func (m model) renderSearchView() string {
 	titleStyle := lipgloss.NewStyle().
 		Bold(true).
-		Foreground(lipgloss.Color("39")).
-		MarginBottom(1)
+		Foreground(lipgloss.Color("39"))
 
-	s := titleStyle.Render("Search Work Items") + "\n\n"
+	selectedStyle := lipgloss.NewStyle().
+		Background(lipgloss.Color("62")).
+		Foreground(lipgloss.Color("230")).
+		Bold(true)
+
+	dimStyle := lipgloss.NewStyle().
+		Foreground(lipgloss.Color("241"))
+
+	// State styles based on category
+	proposedStateStyle := lipgloss.NewStyle().
+		Foreground(lipgloss.Color("243"))
+
+	inProgressStateStyle := lipgloss.NewStyle().
+		Foreground(lipgloss.Color("86")).
+		Bold(true)
+
+	completedStateStyle := lipgloss.NewStyle().
+		Foreground(lipgloss.Color("243")).
+		Italic(true)
+
+	removedStateStyle := lipgloss.NewStyle().
+		Foreground(lipgloss.Color("241")).
+		Italic(true)
+
+	// Header with search prompt
+	s := titleStyle.Render("🔍 Search") + "\n\n"
 	s += m.searchInput.View() + "\n\n"
 
+	treeItems := m.getVisibleTreeItems()
+	resultCount := len(treeItems)
+
+	// Show result count
 	if m.searchInput.Value() != "" {
-		s += fmt.Sprintf("Found %d results\n", len(m.filteredTasks))
+		s += dimStyle.Render(fmt.Sprintf("  %d/%d", resultCount, len(m.tasks))) + "\n\n"
+	} else {
+		s += dimStyle.Render(fmt.Sprintf("  %d items", len(m.tasks))) + "\n\n"
+	}
+
+	// Display results (limit to 15 visible items for performance)
+	const maxVisible = 15
+	startIdx := 0
+	endIdx := min(resultCount, maxVisible)
+
+	// Adjust visible window if cursor is out of view
+	if m.cursor >= maxVisible {
+		startIdx = m.cursor - maxVisible + 1
+		endIdx = m.cursor + 1
+	}
+
+	// Style for tree edges
+	edgeStyle := lipgloss.NewStyle().Foreground(lipgloss.Color("240"))
+
+	for i := startIdx; i < endIdx && i < resultCount; i++ {
+		treeItem := treeItems[i]
+		cursor := "  "
+		if m.cursor == i {
+			cursor = "> "
+		}
+
+		// Get tree drawing prefix and color it
+		treePrefix := edgeStyle.Render(getTreePrefix(treeItem))
+
+		// Get state category to determine styling
+		category := m.getStateCategory(treeItem.WorkItem.State)
+
+		// Choose state style based on category
+		var stateStyle lipgloss.Style
+		var itemTitleStyle lipgloss.Style
+
+		switch category {
+		case "Proposed":
+			stateStyle = proposedStateStyle
+			itemTitleStyle = lipgloss.NewStyle()
+		case "InProgress":
+			stateStyle = inProgressStateStyle
+			itemTitleStyle = lipgloss.NewStyle()
+		case "Completed":
+			stateStyle = completedStateStyle
+			itemTitleStyle = lipgloss.NewStyle().Strikethrough(true).Foreground(lipgloss.Color("243"))
+		case "Removed":
+			stateStyle = removedStateStyle
+			itemTitleStyle = lipgloss.NewStyle().Strikethrough(true).Foreground(lipgloss.Color("241"))
+		default:
+			stateStyle = proposedStateStyle
+			itemTitleStyle = lipgloss.NewStyle()
+		}
+
+		// Make title bold if this is a parent
+		title := treeItem.WorkItem.Title
+		if len(treeItem.WorkItem.Children) > 0 {
+			title = lipgloss.NewStyle().Bold(true).Render(title)
+		}
+
+		// Apply the category-based styling
+		title = itemTitleStyle.Render(title)
+
+		line := fmt.Sprintf("%s%s%s - %s",
+			cursor,
+			treePrefix,
+			title,
+			stateStyle.Render(treeItem.WorkItem.State))
+
+		if m.cursor == i {
+			line = selectedStyle.Render(line)
+		}
+
+		s += line + "\n"
+	}
+
+	// Show scroll indicator if there are more items
+	if resultCount > maxVisible {
+		if endIdx < resultCount {
+			s += dimStyle.Render(fmt.Sprintf("  ... %d more ...", resultCount-endIdx)) + "\n"
+		}
 	}
 
 	helpStyle := lipgloss.NewStyle().
 		Foreground(lipgloss.Color("241")).
 		MarginTop(1)
 
-	s += helpStyle.Render("\nenter: apply search • esc: cancel")
+	s += helpStyle.Render("\n↑/↓ or ctrl+j/k: navigate • ctrl+d/u: half page • enter: open detail • esc: cancel")
 
 	return s
 }
