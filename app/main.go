@@ -492,12 +492,12 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 					m.adjustScrollOffset()
 				}
 				return m, nil
-			case "ctrl+u":
+			case "ctrl+u", "pgup":
 				// Jump up half page
 				m.cursor = max(0, m.cursor-10)
 				m.adjustScrollOffset()
 				return m, nil
-			case "ctrl+d":
+			case "ctrl+d", "pgdown":
 				// Jump down half page
 				treeItems := m.getVisibleTreeItems()
 				m.cursor = min(len(treeItems)-1, m.cursor+10)
@@ -550,6 +550,12 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				if m.stateCursor < len(m.availableStates)-1 {
 					m.stateCursor++
 				}
+			case "ctrl+u", "pgup":
+				// Jump up half page
+				m.stateCursor = max(0, m.stateCursor-10)
+			case "ctrl+d", "pgdown":
+				// Jump down half page
+				m.stateCursor = min(len(m.availableStates)-1, m.stateCursor+10)
 			case "enter":
 				if m.selectedTask != nil && m.client != nil {
 					newState := m.availableStates[m.stateCursor]
@@ -817,11 +823,11 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 					m.cursor++
 					m.adjustScrollOffset()
 				}
-			case "ctrl+u":
+			case "ctrl+u", "pgup":
 				// Jump up half page
 				m.cursor = max(0, m.cursor-10)
 				m.adjustScrollOffset()
-			case "ctrl+d":
+			case "ctrl+d", "pgdown":
 				// Jump down half page
 				treeItems := m.getVisibleTreeItems()
 				maxCursor := len(treeItems) - 1
@@ -2128,7 +2134,7 @@ func (m model) renderListView() string {
 	}
 
 	// Footer with keybindings
-	keybindings := "1/2: switch mode • tab: cycle tabs • →/l: details • ↑/↓ or j/k: navigate • ctrl+u/d: page up/down\nenter: details • o: open in browser • /: filter • f: find • r: refresh • ?: help • q: quit"
+	keybindings := "tab: cycle tabs • →/l: details • ↑/↓ or j/k: navigate • ctrl+u/d or pgup/pgdn: page up/down\nenter: details • o: open in browser • /: filter • f: find • r: refresh • ?: help • q: quit"
 	content.WriteString(m.renderFooter(keybindings))
 
 	return content.String()
@@ -2188,7 +2194,7 @@ func (m model) renderStatePickerView() string {
 	}
 
 	// Footer with keybindings
-	keybindings := "↑/↓ or j/k: navigate • enter: select • esc: cancel"
+	keybindings := "↑/↓ or j/k: navigate • ctrl+u/d or pgup/pgdn: page up/down • enter: select • esc: cancel"
 	content.WriteString(m.renderFooter(keybindings))
 
 	return content.String()
@@ -2366,7 +2372,7 @@ func (m model) renderFilterView() string {
 	}
 
 	// Footer with keybindings
-	keybindings := "↑/↓ or ctrl+j/k: navigate • ctrl+d/u: half page • enter: open detail • esc: cancel • ?: help"
+	keybindings := "↑/↓ or ctrl+j/k: navigate • ctrl+u/d or pgup/pgdn: page up/down • enter: open detail • esc: cancel • ?: help"
 	content.WriteString(m.renderFooter(keybindings))
 
 	return content.String()
@@ -2419,8 +2425,7 @@ func (m model) renderHelpView() string {
 	content.WriteString(sectionStyle.Render("Global") + "\n")
 	content.WriteString(keyStyle.Render("?") + descStyle.Render("Show/hide this help") + "\n")
 	content.WriteString(keyStyle.Render("q, ctrl+c") + descStyle.Render("Quit application") + "\n")
-	content.WriteString(keyStyle.Render("1") + descStyle.Render("Switch to Sprint Mode") + "\n")
-	content.WriteString(keyStyle.Render("2") + descStyle.Render("Switch to Backlog Mode") + "\n")
+	content.WriteString(keyStyle.Render("ctrl+u/d, pgup/pgdn") + descStyle.Render("Jump half page up/down (works in all views)") + "\n")
 	content.WriteString(keyStyle.Render("r") + descStyle.Render("Refresh (all data in list, single item in detail)") + "\n")
 	content.WriteString(keyStyle.Render("o") + descStyle.Render("Open current item in browser") + "\n\n")
 
@@ -2428,7 +2433,6 @@ func (m model) renderHelpView() string {
 	content.WriteString(sectionStyle.Render("List View") + "\n")
 	content.WriteString(keyStyle.Render("tab") + descStyle.Render("Cycle through tabs (sprint or backlog)") + "\n")
 	content.WriteString(keyStyle.Render("↑/↓, j/k") + descStyle.Render("Navigate up/down") + "\n")
-	content.WriteString(keyStyle.Render("ctrl+u/d") + descStyle.Render("Jump half page up/down") + "\n")
 	content.WriteString(keyStyle.Render("→/l, enter") + descStyle.Render("Open item details") + "\n")
 	content.WriteString(keyStyle.Render("/") + descStyle.Render("Filter items in current list") + "\n")
 	content.WriteString(keyStyle.Render("f") + descStyle.Render("Find items with dedicated query") + "\n\n")
@@ -2439,12 +2443,17 @@ func (m model) renderHelpView() string {
 	content.WriteString(keyStyle.Render("e") + descStyle.Render("Edit item") + "\n")
 	content.WriteString(keyStyle.Render("s") + descStyle.Render("Change item state") + "\n\n")
 
+	// State picker view keybindings
+	content.WriteString(sectionStyle.Render("State Picker") + "\n")
+	content.WriteString(keyStyle.Render("↑/↓, j/k") + descStyle.Render("Navigate states") + "\n")
+	content.WriteString(keyStyle.Render("enter") + descStyle.Render("Select state") + "\n")
+	content.WriteString(keyStyle.Render("esc") + descStyle.Render("Cancel") + "\n\n")
+
 	// Filter view keybindings
 	content.WriteString(sectionStyle.Render("Filter View") + "\n")
 	content.WriteString(keyStyle.Render("esc") + descStyle.Render("Cancel filter") + "\n")
 	content.WriteString(keyStyle.Render("enter") + descStyle.Render("Open selected item") + "\n")
-	content.WriteString(keyStyle.Render("↑/↓, ctrl+j/k") + descStyle.Render("Navigate results") + "\n")
-	content.WriteString(keyStyle.Render("ctrl+u/d") + descStyle.Render("Jump half page") + "\n")
+	content.WriteString(keyStyle.Render("↑/↓, ctrl+j/k") + descStyle.Render("Navigate results") + "\n\n")
 
 	// Footer with keybindings
 	keybindings := "?: close help • esc: close help • q: quit"
