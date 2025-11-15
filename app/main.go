@@ -66,6 +66,7 @@ type model struct {
 	backlogTasks      map[backlogTab][]WorkItem // Tasks per backlog tab
 	filteredTasks     []WorkItem
 	cursor            int
+	scrollOffset      int // Scroll offset for list view
 	state             viewState
 	selectedTask      *WorkItem
 	selectedTaskID    int // Track which task the viewport is showing
@@ -480,6 +481,7 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				// Navigate up in filtered results
 				if m.cursor > 0 {
 					m.cursor--
+					m.adjustScrollOffset()
 				}
 				return m, nil
 			case "down", "ctrl+j", "ctrl+n":
@@ -487,16 +489,19 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				treeItems := m.getVisibleTreeItems()
 				if m.cursor < len(treeItems)-1 {
 					m.cursor++
+					m.adjustScrollOffset()
 				}
 				return m, nil
 			case "ctrl+u":
 				// Jump up half page
 				m.cursor = max(0, m.cursor-10)
+				m.adjustScrollOffset()
 				return m, nil
 			case "ctrl+d":
 				// Jump down half page
 				treeItems := m.getVisibleTreeItems()
 				m.cursor = min(len(treeItems)-1, m.cursor+10)
+				m.adjustScrollOffset()
 				return m, nil
 			default:
 				m.filterInput, cmd = m.filterInput.Update(msg)
@@ -631,6 +636,7 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			if m.state == listView && m.currentMode != sprintMode {
 				m.currentMode = sprintMode
 				m.cursor = 0
+				m.scrollOffset = 0
 				m.setActionLog("Switched to Sprint Mode")
 			}
 			return m, nil
@@ -640,6 +646,7 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			if m.state == listView && m.currentMode != backlogMode {
 				m.currentMode = backlogMode
 				m.cursor = 0
+				m.scrollOffset = 0
 				// Load backlog data if not attempted yet
 				if !m.backlogAttempted[m.currentBacklogTab] && m.client != nil {
 					m.loading = true
@@ -746,6 +753,7 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				m.filterInput.Focus()
 				m.filterActive = true // Activate filter immediately
 				m.cursor = 0
+				m.scrollOffset = 0
 			}
 			return m, nil
 
@@ -774,6 +782,7 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				if m.currentMode == sprintMode {
 					m.currentTab = (m.currentTab + 1) % 3
 					m.cursor = 0
+					m.scrollOffset = 0
 					// Load sprint data if not attempted yet
 					if !m.sprintAttempted[m.currentTab] && m.sprints[m.currentTab] != nil && m.client != nil {
 						sprint := m.sprints[m.currentTab]
@@ -784,6 +793,7 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				} else if m.currentMode == backlogMode {
 					m.currentBacklogTab = (m.currentBacklogTab + 1) % 2
 					m.cursor = 0
+					m.scrollOffset = 0
 					// Load backlog data if not attempted yet
 					if !m.backlogAttempted[m.currentBacklogTab] && m.client != nil {
 						m.loading = true
@@ -794,6 +804,7 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			case "up", "k":
 				if m.cursor > 0 {
 					m.cursor--
+					m.adjustScrollOffset()
 				}
 			case "down", "j":
 				treeItems := m.getVisibleTreeItems()
@@ -804,7 +815,21 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				}
 				if m.cursor < maxCursor {
 					m.cursor++
+					m.adjustScrollOffset()
 				}
+			case "ctrl+u":
+				// Jump up half page
+				m.cursor = max(0, m.cursor-10)
+				m.adjustScrollOffset()
+			case "ctrl+d":
+				// Jump down half page
+				treeItems := m.getVisibleTreeItems()
+				maxCursor := len(treeItems) - 1
+				if m.hasMoreItems() {
+					maxCursor = len(treeItems)
+				}
+				m.cursor = min(maxCursor, m.cursor+10)
+				m.adjustScrollOffset()
 			case "enter":
 				treeItems := m.getVisibleTreeItems()
 				// Check if cursor is on "Load More" item
@@ -901,6 +926,7 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 					m.filteredTasks = nil
 					if targetTab == m.currentTab && m.currentMode == sprintMode {
 						m.cursor = 0
+						m.scrollOffset = 0
 					}
 					m.statusMessage = ""
 
@@ -946,6 +972,7 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 					m.filteredTasks = nil
 					if targetTab == m.currentBacklogTab && m.currentMode == backlogMode {
 						m.cursor = 0
+						m.scrollOffset = 0
 					}
 					m.statusMessage = ""
 
@@ -1628,6 +1655,55 @@ func (m model) getVisibleTasksCount() int {
 	}
 }
 
+// getContentHeight returns the available height for rendering work items
+// Takes into account title bar, mode/tab selectors, hint, footer, etc.
+func (m model) getContentHeight() int {
+	// Calculate fixed UI elements height:
+	// - Title bar: 3 lines (title + 2 blank lines)
+	// - Mode selector: 2 lines (modes + blank line)
+	// - Tab selector: 2 lines (tabs + blank line)
+	// - Hint (if present): 2 lines (hint + blank line)
+	// - Footer: 4 lines (blank + action log + separator + keybindings)
+
+	fixedHeight := 3 + 2 + 2 + 4 // = 11 lines minimum
+
+	// Add hint lines if present
+	if m.getTabHint() != "" {
+		fixedHeight += 2
+	}
+
+	// Add status message lines if present
+	if m.statusMessage != "" {
+		fixedHeight += 2
+	}
+
+	contentHeight := m.height - fixedHeight
+	if contentHeight < 5 {
+		contentHeight = 5 // Minimum content height
+	}
+
+	return contentHeight
+}
+
+// adjustScrollOffset adjusts the scroll offset to keep the cursor visible
+func (m *model) adjustScrollOffset() {
+	contentHeight := m.getContentHeight()
+
+	// Ensure cursor is within visible area
+	if m.cursor < m.scrollOffset {
+		// Cursor moved above visible area, scroll up
+		m.scrollOffset = m.cursor
+	} else if m.cursor >= m.scrollOffset+contentHeight {
+		// Cursor moved below visible area, scroll down
+		m.scrollOffset = m.cursor - contentHeight + 1
+	}
+
+	// Ensure scroll offset is never negative
+	if m.scrollOffset < 0 {
+		m.scrollOffset = 0
+	}
+}
+
 // renderLogLine renders the action log line if there is one
 func (m model) renderLogLine() string {
 	if m.lastActionLog == "" {
@@ -1891,7 +1967,69 @@ func (m model) renderListView() string {
 		Foreground(lipgloss.Color("230")).
 		Background(lipgloss.Color("62"))
 
-	for i, treeItem := range treeItems {
+	// Calculate visible range based on scroll offset
+	contentHeight := m.getContentHeight()
+	startIdx := m.scrollOffset
+	endIdx := m.scrollOffset + contentHeight
+
+	// Total items including potential "Load More" item
+	totalItems := len(treeItems)
+	if m.hasMoreItems() {
+		totalItems++
+	}
+
+	// Clamp end index
+	if endIdx > totalItems {
+		endIdx = totalItems
+	}
+
+	// Render only visible items
+	for i := startIdx; i < endIdx; i++ {
+		// Check if this is the "Load More" item
+		if i >= len(treeItems) {
+			// This is the "Load More" item
+			if m.hasMoreItems() {
+				remaining := m.getRemainingCount()
+				loadMoreStyle := lipgloss.NewStyle().
+					Foreground(lipgloss.Color("86")).
+					Italic(true)
+
+				cursor := " "
+				loadMoreIdx := len(treeItems)
+				if m.cursor == loadMoreIdx {
+					cursor = ">"
+				}
+
+				var loadMoreText string
+
+				// Show spinner inline if loading more
+				if m.loadingMore {
+					loadMoreText = fmt.Sprintf("%s %s Loading more items...", cursor, m.spinner.View())
+					if m.cursor == loadMoreIdx {
+						loadMoreText = selectedStyle.Render(loadMoreText)
+					} else {
+						loadMoreText = loadMoreStyle.Render(loadMoreText)
+					}
+				} else {
+					if remaining > 30 {
+						loadMoreText = fmt.Sprintf("%s Load More (+30)", cursor)
+					} else {
+						loadMoreText = fmt.Sprintf("%s Load All (+%d)", cursor, remaining)
+					}
+
+					if m.cursor == loadMoreIdx {
+						loadMoreText = selectedStyle.Render(loadMoreText)
+					} else {
+						loadMoreText = loadMoreStyle.Render(loadMoreText)
+					}
+				}
+
+				content.WriteString(loadMoreText + "\n")
+			}
+			continue
+		}
+
+		treeItem := treeItems[i]
 		isSelected := m.cursor == i
 
 		cursor := " "
@@ -1989,48 +2127,8 @@ func (m model) renderListView() string {
 		content.WriteString(line + "\n")
 	}
 
-	// Add "Load More" or "Load All" item if there are more items
-	if m.hasMoreItems() {
-		remaining := m.getRemainingCount()
-		loadMoreStyle := lipgloss.NewStyle().
-			Foreground(lipgloss.Color("86")).
-			Italic(true)
-
-		cursor := " "
-		loadMoreIdx := len(treeItems)
-		if m.cursor == loadMoreIdx {
-			cursor = ">"
-		}
-
-		var loadMoreText string
-
-		// Show spinner inline if loading more
-		if m.loadingMore {
-			loadMoreText = fmt.Sprintf("%s %s Loading more items...", cursor, m.spinner.View())
-			if m.cursor == loadMoreIdx {
-				loadMoreText = selectedStyle.Render(loadMoreText)
-			} else {
-				loadMoreText = loadMoreStyle.Render(loadMoreText)
-			}
-		} else {
-			if remaining > 30 {
-				loadMoreText = fmt.Sprintf("%s Load More (+30)", cursor)
-			} else {
-				loadMoreText = fmt.Sprintf("%s Load All (+%d)", cursor, remaining)
-			}
-
-			if m.cursor == loadMoreIdx {
-				loadMoreText = selectedStyle.Render(loadMoreText)
-			} else {
-				loadMoreText = loadMoreStyle.Render(loadMoreText)
-			}
-		}
-
-		content.WriteString(loadMoreText + "\n")
-	}
-
 	// Footer with keybindings
-	keybindings := "1/2: switch mode • tab: cycle tabs • →/l: details • ↑/↓ or j/k: navigate\nenter: details • o: open in browser • /: filter • f: find • r: refresh • ?: help • q: quit"
+	keybindings := "1/2: switch mode • tab: cycle tabs • →/l: details • ↑/↓ or j/k: navigate • ctrl+u/d: page up/down\nenter: details • o: open in browser • /: filter • f: find • r: refresh • ?: help • q: quit"
 	content.WriteString(m.renderFooter(keybindings))
 
 	return content.String()
@@ -2330,6 +2428,7 @@ func (m model) renderHelpView() string {
 	content.WriteString(sectionStyle.Render("List View") + "\n")
 	content.WriteString(keyStyle.Render("tab") + descStyle.Render("Cycle through tabs (sprint or backlog)") + "\n")
 	content.WriteString(keyStyle.Render("↑/↓, j/k") + descStyle.Render("Navigate up/down") + "\n")
+	content.WriteString(keyStyle.Render("ctrl+u/d") + descStyle.Render("Jump half page up/down") + "\n")
 	content.WriteString(keyStyle.Render("→/l, enter") + descStyle.Render("Open item details") + "\n")
 	content.WriteString(keyStyle.Render("/") + descStyle.Render("Filter items in current list") + "\n")
 	content.WriteString(keyStyle.Render("f") + descStyle.Render("Find items with dedicated query") + "\n\n")
