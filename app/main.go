@@ -51,6 +51,7 @@ type model struct {
 	selectedTask    *WorkItem
 	selectedTaskID  int // Track which task the viewport is showing
 	loading         bool
+	loadingMore     bool // Track if we're loading more items (for inline spinner)
 	err             error
 	client          *AzureDevOpsClient
 	spinner         spinner.Model
@@ -518,8 +519,7 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				if m.cursor == len(treeItems) && m.hasMoreItems() {
 					// Load more items by excluding already loaded IDs for current sprint
 					if m.client != nil {
-						m.loading = true
-						m.statusMessage = "Loading more items..."
+						m.loadingMore = true
 
 						// Get current sprint path
 						sprint := m.sprints[m.currentTab]
@@ -559,6 +559,7 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		if msg.err != nil {
 			m.err = msg.err
 			m.statusMessage = ""
+			m.loadingMore = false
 			// If this was part of initial loading, decrement counter
 			if m.initialLoading > 0 {
 				m.initialLoading--
@@ -586,10 +587,9 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				m.sprintLoaded[targetTab] = m.sprintLoaded[targetTab] + len(msg.tasks)
 				m.sprintCounts[targetTab] = msg.totalCount
 
-				m.statusMessage = fmt.Sprintf("Loaded %d more items (%d of %d in this sprint)",
-					len(msg.tasks), m.sprintLoaded[targetTab], msg.totalCount)
 				m.setActionLog(fmt.Sprintf("Loaded %d more items", len(msg.tasks)))
 				m.loading = false
+				m.loadingMore = false
 			} else {
 				// Initial load or replace
 				if len(m.tasks) == 0 {
@@ -719,7 +719,7 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 
 	case spinner.TickMsg:
-		if m.loading {
+		if m.loading || m.loadingMore {
 			m.spinner, cmd = m.spinner.Update(msg)
 			cmds = append(cmds, cmd)
 		}
@@ -1290,8 +1290,8 @@ func (m model) renderListView() string {
 		content.WriteString(msgStyle.Render(m.statusMessage) + "\n\n")
 	}
 
-	// Show loader if loading
-	if m.loading {
+	// Show loader if loading (but not loadingMore - that shows inline)
+	if m.loading && !m.loadingMore {
 		loaderStyle := lipgloss.NewStyle().
 			Foreground(lipgloss.Color("86")).
 			MarginLeft(2)
@@ -1433,16 +1433,27 @@ func (m model) renderListView() string {
 		}
 
 		var loadMoreText string
-		if remaining > 30 {
-			loadMoreText = fmt.Sprintf("%s Load More (+30)", cursor)
-		} else {
-			loadMoreText = fmt.Sprintf("%s Load All (+%d)", cursor, remaining)
-		}
 
-		if m.cursor == loadMoreIdx {
-			loadMoreText = selectedStyle.Render(loadMoreText)
+		// Show spinner inline if loading more
+		if m.loadingMore {
+			loadMoreText = fmt.Sprintf("%s %s Loading more items...", cursor, m.spinner.View())
+			if m.cursor == loadMoreIdx {
+				loadMoreText = selectedStyle.Render(loadMoreText)
+			} else {
+				loadMoreText = loadMoreStyle.Render(loadMoreText)
+			}
 		} else {
-			loadMoreText = loadMoreStyle.Render(loadMoreText)
+			if remaining > 30 {
+				loadMoreText = fmt.Sprintf("%s Load More (+30)", cursor)
+			} else {
+				loadMoreText = fmt.Sprintf("%s Load All (+%d)", cursor, remaining)
+			}
+
+			if m.cursor == loadMoreIdx {
+				loadMoreText = selectedStyle.Render(loadMoreText)
+			} else {
+				loadMoreText = loadMoreStyle.Render(loadMoreText)
+			}
 		}
 
 		content.WriteString(loadMoreText + "\n")
