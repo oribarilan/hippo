@@ -98,6 +98,27 @@ func getAzureCliToken() (string, error) {
 	return token, nil
 }
 
+// GetWorkItemByID fetches a single work item by its ID
+func (c *AzureDevOpsClient) GetWorkItemByID(id int) (*WorkItem, error) {
+	ids := []int{id}
+	workItemsArgs := workitemtracking.GetWorkItemsArgs{
+		Ids:    &ids,
+		Expand: &workitemtracking.WorkItemExpandValues.All,
+	}
+
+	workItems, err := c.workItemClient.GetWorkItems(c.ctx, workItemsArgs)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get work item: %w", err)
+	}
+
+	if workItems == nil || len(*workItems) == 0 {
+		return nil, fmt.Errorf("work item not found")
+	}
+
+	task := c.convertWorkItem((*workItems)[0])
+	return &task, nil
+}
+
 func (c *AzureDevOpsClient) GetWorkItems() ([]WorkItem, error) {
 	return c.GetWorkItemsExcluding(nil, "", 30)
 }
@@ -370,6 +391,50 @@ func (c *AzureDevOpsClient) UpdateWorkItemState(workItemID int, newState string)
 	_, err := c.workItemClient.UpdateWorkItem(c.ctx, updateArgs)
 	if err != nil {
 		return fmt.Errorf("failed to update work item state: %w", err)
+	}
+
+	return nil
+}
+
+// UpdateWorkItem updates multiple fields of a work item
+func (c *AzureDevOpsClient) UpdateWorkItem(workItemID int, updates map[string]interface{}) error {
+	// Create a patch document with multiple operations
+	op := webapi.OperationValues.Add
+	var patchDocument []webapi.JsonPatchOperation
+
+	// Map of field keys to their Azure DevOps field paths
+	fieldMap := map[string]string{
+		"title":       "/fields/System.Title",
+		"description": "/fields/System.Description",
+		"tags":        "/fields/System.Tags",
+		"priority":    "/fields/Microsoft.VSTS.Common.Priority",
+		"state":       "/fields/System.State",
+	}
+
+	// Build patch operations for each field
+	for key, value := range updates {
+		if fieldPath, ok := fieldMap[key]; ok {
+			path := fieldPath
+			patchDocument = append(patchDocument, webapi.JsonPatchOperation{
+				Op:    &op,
+				Path:  &path,
+				Value: value,
+			})
+		}
+	}
+
+	if len(patchDocument) == 0 {
+		return fmt.Errorf("no valid fields to update")
+	}
+
+	updateArgs := workitemtracking.UpdateWorkItemArgs{
+		Id:       &workItemID,
+		Document: &patchDocument,
+	}
+
+	_, err := c.workItemClient.UpdateWorkItem(c.ctx, updateArgs)
+	if err != nil {
+		return fmt.Errorf("failed to update work item: %w", err)
 	}
 
 	return nil

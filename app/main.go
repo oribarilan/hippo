@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"github.com/charmbracelet/bubbles/spinner"
+	"github.com/charmbracelet/bubbles/textarea"
 	"github.com/charmbracelet/bubbles/textinput"
 	"github.com/charmbracelet/bubbles/viewport"
 	tea "github.com/charmbracelet/bubbletea"
@@ -27,6 +28,7 @@ const (
 	findView
 	filterView
 	helpView
+	editView
 )
 
 type sprintTab int
@@ -77,6 +79,11 @@ type model struct {
 	initialLoading  int                // Count of initial sprint loads pending
 	width           int                // Terminal width
 	height          int                // Terminal height
+	// Edit mode fields
+	editTitleInput       textinput.Model
+	editDescriptionInput textarea.Model
+	editFieldCursor      int // Which field is currently focused (0=title, 1=description)
+	editFieldCount       int // Total number of editable fields
 }
 
 type WorkItem struct {
@@ -116,24 +123,40 @@ func initialModel() model {
 	findInput.Placeholder = "Find items (search in title/description)..."
 	findInput.Focus()
 
+	// Edit mode inputs
+	editTitleInput := textinput.New()
+	editTitleInput.Placeholder = "Title"
+	editTitleInput.CharLimit = 255
+	editTitleInput.Width = 80
+
+	editDescriptionInput := textarea.New()
+	editDescriptionInput.Placeholder = "Description"
+	editDescriptionInput.CharLimit = 4000
+	editDescriptionInput.SetWidth(80)
+	editDescriptionInput.SetHeight(10)
+
 	return model{
-		tasks:           []WorkItem{},
-		filteredTasks:   []WorkItem{},
-		cursor:          0,
-		state:           listView,
-		loading:         true,
-		spinner:         s,
-		filterInput:     filterInput,
-		findInput:       findInput,
-		availableStates: []string{"New", "Active", "Closed", "Removed"},
-		stateCategories: make(map[string]string),
-		organizationURL: os.Getenv("AZURE_DEVOPS_ORG_URL"),
-		projectName:     os.Getenv("AZURE_DEVOPS_PROJECT"),
-		currentTab:      currentSprint,
-		sprints:         make(map[sprintTab]*Sprint),
-		sprintCounts:    make(map[sprintTab]int),
-		sprintLoaded:    make(map[sprintTab]int),
-		sprintAttempted: make(map[sprintTab]bool),
+		tasks:                []WorkItem{},
+		filteredTasks:        []WorkItem{},
+		cursor:               0,
+		state:                listView,
+		loading:              true,
+		spinner:              s,
+		filterInput:          filterInput,
+		findInput:            findInput,
+		availableStates:      []string{"New", "Active", "Closed", "Removed"},
+		stateCategories:      make(map[string]string),
+		organizationURL:      os.Getenv("AZURE_DEVOPS_ORG_URL"),
+		projectName:          os.Getenv("AZURE_DEVOPS_PROJECT"),
+		currentTab:           currentSprint,
+		sprints:              make(map[sprintTab]*Sprint),
+		sprintCounts:         make(map[sprintTab]int),
+		sprintLoaded:         make(map[sprintTab]int),
+		sprintAttempted:      make(map[sprintTab]bool),
+		editTitleInput:       editTitleInput,
+		editDescriptionInput: editDescriptionInput,
+		editFieldCursor:      0,
+		editFieldCount:       2, // Title and Description only
 	}
 }
 
@@ -148,6 +171,15 @@ type tasksLoadedMsg struct {
 
 type stateUpdatedMsg struct {
 	err error
+}
+
+type workItemUpdatedMsg struct {
+	err error
+}
+
+type workItemRefreshedMsg struct {
+	workItem *WorkItem
+	err      error
 }
 
 type statesLoadedMsg struct {
@@ -262,6 +294,20 @@ func updateWorkItemState(client *AzureDevOpsClient, workItemID int, newState str
 	return func() tea.Msg {
 		err := client.UpdateWorkItemState(workItemID, newState)
 		return stateUpdatedMsg{err: err}
+	}
+}
+
+func updateWorkItem(client *AzureDevOpsClient, workItemID int, updates map[string]interface{}) tea.Cmd {
+	return func() tea.Msg {
+		err := client.UpdateWorkItem(workItemID, updates)
+		return workItemUpdatedMsg{err: err}
+	}
+}
+
+func refreshWorkItem(client *AzureDevOpsClient, workItemID int) tea.Cmd {
+	return func() tea.Msg {
+		workItem, err := client.GetWorkItemByID(workItemID)
+		return workItemRefreshedMsg{workItem: workItem, err: err}
 	}
 }
 
@@ -421,6 +467,67 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			return m, nil
 		}
 
+		// Handle edit view
+		if m.state == editView {
+			switch msg.String() {
+			case "esc":
+				// Cancel edit and return to detail view
+				m.state = detailView
+				return m, nil
+			case "tab":
+				// Move to next field
+				m.editFieldCursor = (m.editFieldCursor + 1) % m.editFieldCount
+				m.focusEditField()
+				return m, nil
+			case "shift+tab":
+				// Move to previous field
+				m.editFieldCursor--
+				if m.editFieldCursor < 0 {
+					m.editFieldCursor = m.editFieldCount - 1
+				}
+				m.focusEditField()
+				return m, nil
+			case "ctrl+s":
+				// Save changes
+				if m.selectedTask != nil && m.client != nil {
+					updates := make(map[string]interface{})
+
+					// Collect values from inputs
+					if title := m.editTitleInput.Value(); title != "" && title != m.selectedTask.Title {
+						updates["title"] = title
+					}
+					if desc := m.editDescriptionInput.Value(); desc != m.selectedTask.Description {
+						updates["description"] = desc
+					}
+
+					// Only update if there are changes
+					if len(updates) > 0 {
+						m.loading = true
+						m.statusMessage = "Saving changes..."
+						return m, tea.Batch(
+							updateWorkItem(m.client, m.selectedTask.ID, updates),
+							m.spinner.Tick,
+						)
+					} else {
+						// No changes, just return to detail view
+						m.state = detailView
+						return m, nil
+					}
+				}
+				return m, nil
+			default:
+				// Update the focused input field
+				var cmd tea.Cmd
+				switch m.editFieldCursor {
+				case 0:
+					m.editTitleInput, cmd = m.editTitleInput.Update(msg)
+				case 1:
+					m.editDescriptionInput, cmd = m.editDescriptionInput.Update(msg)
+				}
+				return m, cmd
+			}
+		}
+
 		// Global hotkeys
 		switch msg.String() {
 		case "ctrl+c", "q":
@@ -438,12 +545,24 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		case "r":
 			// Refresh
 			if m.client != nil {
+				// If we're in detail view, just refresh the selected item
+				if m.state == detailView && m.selectedTask != nil {
+					m.loading = true
+					m.statusMessage = "Refreshing item..."
+					m.setActionLog(fmt.Sprintf("Refreshing #%d...", m.selectedTask.ID))
+					return m, tea.Batch(refreshWorkItem(m.client, m.selectedTask.ID), m.spinner.Tick)
+				}
+				// Otherwise, refresh everything
 				m.loading = true
 				m.statusMessage = "Refreshing..."
 				m.setActionLog("Refreshing data...")
 				m.filterActive = false
 				m.filterInput.SetValue("")
 				m.filteredTasks = nil
+				m.tasks = nil // Clear tasks to prevent duplication
+				m.sprintCounts = make(map[sprintTab]int)
+				m.sprintLoaded = make(map[sprintTab]int)
+				m.sprintAttempted = make(map[sprintTab]bool)
 				return m, tea.Batch(loadTasks(m.client), loadSprints(m.client), m.spinner.Tick)
 			}
 			return m, nil
@@ -474,6 +593,19 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 					loadWorkItemStates(m.client, m.selectedTask.WorkItemType),
 					m.spinner.Tick,
 				)
+			}
+			return m, nil
+
+		case "e":
+			// Enter edit mode - only in detail view
+			if m.state == detailView && m.selectedTask != nil {
+				// Populate edit fields with current values
+				m.editTitleInput.SetValue(m.selectedTask.Title)
+				m.editDescriptionInput.SetValue(m.selectedTask.Description)
+				m.editFieldCursor = 0
+				m.editTitleInput.Focus()
+				m.editDescriptionInput.Blur()
+				m.state = editView
 			}
 			return m, nil
 
@@ -682,6 +814,33 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			}
 		}
 
+	case workItemUpdatedMsg:
+		m.loading = false
+		m.statusMessage = ""
+		taskTitle := ""
+		if m.selectedTask != nil {
+			taskTitle = m.selectedTask.Title
+		}
+
+		if msg.err != nil {
+			m.statusMessage = fmt.Sprintf("Error updating work item: %v", msg.err)
+			m.setActionLog(fmt.Sprintf("Error updating work item: %v", msg.err))
+			m.state = editView // Stay in edit view on error
+		} else {
+			m.statusMessage = "Work item updated successfully!"
+			if taskTitle != "" {
+				m.setActionLog(fmt.Sprintf("Updated \"%s\"", taskTitle))
+			} else {
+				m.setActionLog("Work item updated successfully")
+			}
+			m.state = detailView // Return to detail view on success
+			// Refresh the list
+			if m.client != nil {
+				m.loading = true
+				return m, tea.Batch(loadTasks(m.client), loadSprints(m.client), m.spinner.Tick)
+			}
+		}
+
 	case statesLoadedMsg:
 		m.loading = false
 		m.statusMessage = ""
@@ -692,6 +851,30 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.stateCategories = msg.stateCategories
 			m.state = statePickerView
 			m.stateCursor = 0
+		}
+
+	case workItemRefreshedMsg:
+		m.loading = false
+		m.statusMessage = ""
+		if msg.err != nil {
+			m.statusMessage = fmt.Sprintf("Error refreshing item: %v", msg.err)
+			m.setActionLog(fmt.Sprintf("Error refreshing item: %v", msg.err))
+		} else if msg.workItem != nil {
+			// Update the selected task in detail view
+			m.selectedTask = msg.workItem
+
+			// Also update the item in the tasks list
+			for i := range m.tasks {
+				if m.tasks[i].ID == msg.workItem.ID {
+					// Preserve children since they're not loaded in single item refresh
+					existingChildren := m.tasks[i].Children
+					m.tasks[i] = *msg.workItem
+					m.tasks[i].Children = existingChildren
+					break
+				}
+			}
+
+			m.setActionLog(fmt.Sprintf("Refreshed #%d", msg.workItem.ID))
 		}
 
 	case sprintsLoadedMsg:
@@ -1184,6 +1367,21 @@ func (m *model) setActionLog(message string) {
 	m.lastActionTime = time.Now()
 }
 
+// focusEditField focuses the appropriate edit field based on editFieldCursor
+func (m *model) focusEditField() {
+	// Blur all fields first
+	m.editTitleInput.Blur()
+	m.editDescriptionInput.Blur()
+
+	// Focus the selected field
+	switch m.editFieldCursor {
+	case 0:
+		m.editTitleInput.Focus()
+	case 1:
+		m.editDescriptionInput.Focus()
+	}
+}
+
 // renderTitleBar renders the title bar with the given title text
 func (m model) renderTitleBar(title string) string {
 	titleBarStyle := lipgloss.NewStyle().
@@ -1246,6 +1444,8 @@ func (m model) View() string {
 		return m.renderFindView()
 	case helpView:
 		return m.renderHelpView()
+	case editView:
+		return m.renderEditView()
 	default:
 		return m.renderListView()
 	}
@@ -1525,7 +1725,7 @@ func (m model) renderDetailView() string {
 	content.WriteString("\n")
 
 	// Footer with keybindings
-	keybindings := "←/h/esc: back • o: open in browser • s: change state • ?: help • q: quit"
+	keybindings := "←/h/esc: back • r: refresh • e: edit • o: open in browser • s: change state • ?: help • q: quit"
 	content.WriteString(m.renderFooter(keybindings))
 
 	return content.String()
@@ -1793,7 +1993,7 @@ func (m model) renderHelpView() string {
 	content.WriteString(sectionStyle.Render("Global") + "\n")
 	content.WriteString(keyStyle.Render("?") + descStyle.Render("Show/hide this help") + "\n")
 	content.WriteString(keyStyle.Render("q, ctrl+c") + descStyle.Render("Quit application") + "\n")
-	content.WriteString(keyStyle.Render("r") + descStyle.Render("Refresh data") + "\n")
+	content.WriteString(keyStyle.Render("r") + descStyle.Render("Refresh (all data in list, single item in detail)") + "\n")
 	content.WriteString(keyStyle.Render("o") + descStyle.Render("Open current item in browser") + "\n\n")
 
 	// List view keybindings
@@ -1807,6 +2007,7 @@ func (m model) renderHelpView() string {
 	// Detail view keybindings
 	content.WriteString(sectionStyle.Render("Detail View") + "\n")
 	content.WriteString(keyStyle.Render("←/h, esc, backspace") + descStyle.Render("Back to list") + "\n")
+	content.WriteString(keyStyle.Render("e") + descStyle.Render("Edit item") + "\n")
 	content.WriteString(keyStyle.Render("s") + descStyle.Render("Change item state") + "\n\n")
 
 	// Filter view keybindings
@@ -1818,6 +2019,67 @@ func (m model) renderHelpView() string {
 
 	// Footer with keybindings
 	keybindings := "?: close help • esc: close help • q: quit"
+	content.WriteString(m.renderFooter(keybindings))
+
+	return content.String()
+}
+
+func (m model) renderEditView() string {
+	var content strings.Builder
+
+	// Title bar
+	titleText := "Edit Work Item"
+	if m.selectedTask != nil {
+		titleText = fmt.Sprintf("Edit Work Item #%d", m.selectedTask.ID)
+	}
+	content.WriteString(m.renderTitleBar(titleText))
+
+	// Styles
+	labelStyle := lipgloss.NewStyle().
+		Foreground(lipgloss.Color("86")).
+		Bold(true).
+		Width(15)
+
+	helpStyle := lipgloss.NewStyle().
+		Foreground(lipgloss.Color("241")).
+		Italic(true)
+
+	sectionStyle := lipgloss.NewStyle().
+		MarginTop(1).
+		MarginBottom(1)
+
+	// Show loading spinner if saving
+	if m.loading {
+		loaderStyle := lipgloss.NewStyle().
+			Foreground(lipgloss.Color("86")).
+			MarginLeft(2)
+		content.WriteString(loaderStyle.Render(fmt.Sprintf("%s %s", m.spinner.View(), m.statusMessage)) + "\n\n")
+
+		// Footer with keybindings
+		keybindings := "Saving changes..."
+		content.WriteString(m.renderFooter(keybindings))
+
+		return content.String()
+	}
+
+	// Title field
+	content.WriteString(sectionStyle.Render(labelStyle.Render("Title:") + "\n" + m.editTitleInput.View()))
+	content.WriteString("\n")
+	if m.editFieldCursor == 0 {
+		content.WriteString(helpStyle.Render("  Enter the work item title") + "\n")
+	}
+	content.WriteString("\n")
+
+	// Description field
+	content.WriteString(sectionStyle.Render(labelStyle.Render("Description:") + "\n" + m.editDescriptionInput.View()))
+	content.WriteString("\n")
+	if m.editFieldCursor == 1 {
+		content.WriteString(helpStyle.Render("  Multi-line text editor (HTML will be stripped)") + "\n")
+	}
+	content.WriteString("\n")
+
+	// Footer with keybindings
+	keybindings := "tab/shift+tab: switch field • ctrl+s: save • esc: cancel • ?: help"
 	content.WriteString(m.renderFooter(keybindings))
 
 	return content.String()
