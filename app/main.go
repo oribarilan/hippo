@@ -24,8 +24,9 @@ const (
 	listView viewState = iota
 	detailView
 	statePickerView
-	searchView
+	findView
 	filterView
+	helpView
 )
 
 type sprintTab int
@@ -55,8 +56,8 @@ type model struct {
 	err             error
 	client          *AzureDevOpsClient
 	spinner         spinner.Model
-	searchInput     textinput.Model
 	filterInput     textinput.Model
+	findInput       textinput.Model
 	viewport        viewport.Model
 	viewportReady   bool
 	stateCursor     int
@@ -64,7 +65,7 @@ type model struct {
 	stateCategories map[string]string // Map of state name to category (Proposed, InProgress, Completed, etc.)
 	organizationURL string
 	projectName     string
-	searchActive    bool
+	filterActive    bool
 	statusMessage   string
 	lastActionLog   string    // Log line showing the result of the last action
 	lastActionTime  time.Time // Timestamp of the last action
@@ -107,13 +108,13 @@ func initialModel() model {
 	s.Spinner = spinner.Dot
 	s.Style = lipgloss.NewStyle().Foreground(lipgloss.Color("205"))
 
-	searchInput := textinput.New()
-	searchInput.Placeholder = "Search by title or ID..."
-	searchInput.Focus()
-
 	filterInput := textinput.New()
-	filterInput.Placeholder = "Enter filter (e.g., assigned to me, all items)..."
+	filterInput.Placeholder = "Filter by title or ID..."
 	filterInput.Focus()
+
+	findInput := textinput.New()
+	findInput.Placeholder = "Find items (search in title/description)..."
+	findInput.Focus()
 
 	return model{
 		tasks:           []WorkItem{},
@@ -122,8 +123,8 @@ func initialModel() model {
 		state:           listView,
 		loading:         true,
 		spinner:         s,
-		searchInput:     searchInput,
 		filterInput:     filterInput,
+		findInput:       findInput,
 		availableStates: []string{"New", "Active", "Closed", "Removed"},
 		stateCategories: make(map[string]string),
 		organizationURL: os.Getenv("AZURE_DEVOPS_ORG_URL"),
@@ -296,13 +297,22 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 
 	case tea.KeyMsg:
-		// Handle search input
-		if m.state == searchView {
+		// Handle help view
+		if m.state == helpView {
+			switch msg.String() {
+			case "esc", "?":
+				m.state = listView
+				return m, nil
+			}
+		}
+
+		// Handle filter input (filter existing list by title/ID)
+		if m.state == filterView {
 			switch msg.String() {
 			case "esc":
 				m.state = listView
-				m.searchActive = false
-				m.searchInput.SetValue("")
+				m.filterActive = false
+				m.filterInput.SetValue("")
 				m.filteredTasks = nil
 				m.cursor = 0
 				return m, nil
@@ -317,13 +327,13 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 							m.selectedTask = treeItems[m.cursor].WorkItem
 							m.selectedTaskID = m.selectedTask.ID
 							m.state = detailView
-							m.searchActive = true
+							m.filterActive = true
 						}
 					}
 				} else {
-					// Just close search and keep filter active
+					// Just close filter and keep filter active
 					m.state = listView
-					m.searchActive = true
+					m.filterActive = true
 					m.cursor = 0
 				}
 				return m, nil
@@ -350,33 +360,33 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				m.cursor = min(len(treeItems)-1, m.cursor+10)
 				return m, nil
 			default:
-				m.searchInput, cmd = m.searchInput.Update(msg)
+				m.filterInput, cmd = m.filterInput.Update(msg)
 				m.filterSearch()
-				// Reset cursor when search changes
+				// Reset cursor when filter changes
 				m.cursor = 0
 				return m, cmd
 			}
 		}
 
-		// Handle filter input
-		if m.state == filterView {
+		// Handle find input (search with dedicated query)
+		if m.state == findView {
 			switch msg.String() {
 			case "esc":
 				m.state = listView
-				m.filterInput.SetValue("")
+				m.findInput.SetValue("")
 				return m, nil
 			case "enter":
 				// For now, just go back to list view
 				// Could implement custom queries here
 				m.state = listView
-				m.filterInput.SetValue("")
+				m.findInput.SetValue("")
 				if m.client != nil {
 					m.loading = true
 					return m, tea.Batch(loadTasks(m.client), loadSprints(m.client), m.spinner.Tick)
 				}
 				return m, nil
 			default:
-				m.filterInput, cmd = m.filterInput.Update(msg)
+				m.findInput, cmd = m.findInput.Update(msg)
 				return m, cmd
 			}
 		}
@@ -416,14 +426,23 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		case "ctrl+c", "q":
 			return m, tea.Quit
 
+		case "?":
+			// Show help modal
+			if m.state == helpView {
+				m.state = listView
+			} else {
+				m.state = helpView
+			}
+			return m, nil
+
 		case "r":
 			// Refresh
 			if m.client != nil {
 				m.loading = true
 				m.statusMessage = "Refreshing..."
 				m.setActionLog("Refreshing data...")
-				m.searchActive = false
-				m.searchInput.SetValue("")
+				m.filterActive = false
+				m.filterInput.SetValue("")
 				m.filteredTasks = nil
 				return m, tea.Batch(loadTasks(m.client), loadSprints(m.client), m.spinner.Tick)
 			}
@@ -459,20 +478,20 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			return m, nil
 
 		case "/":
-			// Search within results
+			// Filter within existing results
 			if m.state == listView {
-				m.state = searchView
-				m.searchInput.Focus()
-				m.searchActive = true // Activate search immediately
+				m.state = filterView
+				m.filterInput.Focus()
+				m.filterActive = true // Activate filter immediately
 				m.cursor = 0
 			}
 			return m, nil
 
 		case "f":
-			// New filter/query
+			// Find with dedicated query
 			if m.state == listView {
-				m.state = filterView
-				m.filterInput.Focus()
+				m.state = findView
+				m.findInput.Focus()
 			}
 			return m, nil
 		}
@@ -826,7 +845,7 @@ func getWorkItemIcon(workItemType string) string {
 }
 
 func (m *model) filterSearch() {
-	query := strings.ToLower(m.searchInput.Value())
+	query := strings.ToLower(m.filterInput.Value())
 	if query == "" {
 		m.filteredTasks = nil
 		return
@@ -845,8 +864,8 @@ func (m *model) filterSearch() {
 func (m model) getVisibleTasks() []WorkItem {
 	tasks := m.tasks
 
-	// Apply search filter if active
-	if m.searchActive && m.filteredTasks != nil {
+	// Apply filter if active
+	if m.filterActive && m.filteredTasks != nil {
 		tasks = m.filteredTasks
 	}
 
@@ -908,6 +927,26 @@ func (m model) getParentTask(task *WorkItem) *WorkItem {
 	}
 
 	return nil
+}
+
+// formatDateTime formats a datetime string into a human-readable format
+func formatDateTime(dateStr string) string {
+	if dateStr == "" {
+		return ""
+	}
+
+	// Parse the date string (format: 2006-01-02T15:04:05)
+	t, err := time.Parse("2006-01-02T15:04:05", dateStr)
+	if err != nil {
+		// Try without the time part
+		t, err = time.Parse("2006-01-02", dateStr[:10])
+		if err != nil {
+			return dateStr
+		}
+	}
+
+	// Format as "Jan 2, 2006 3:04 PM"
+	return t.Format("Jan 2, 2006 3:04 PM")
 }
 
 // getRelativeTime returns a human-readable relative time string
@@ -1035,10 +1074,11 @@ func (m model) buildDetailContent() string {
 	}
 
 	if task.CreatedDate != "" {
+		formattedDate := formatDateTime(task.CreatedDate)
 		relativeTime := getRelativeTime(task.CreatedDate)
-		dateValue := task.CreatedDate
+		dateValue := formattedDate
 		if relativeTime != "" {
-			dateValue = fmt.Sprintf("%s %s", task.CreatedDate, relativeTime)
+			dateValue = fmt.Sprintf("%s %s", formattedDate, relativeTime)
 		}
 		cardContent.WriteString(labelStyle.Render("Created:"))
 		cardContent.WriteString(valueStyle.Render(dateValue))
@@ -1046,10 +1086,11 @@ func (m model) buildDetailContent() string {
 	}
 
 	if task.ChangedDate != "" {
+		formattedDate := formatDateTime(task.ChangedDate)
 		relativeTime := getRelativeTime(task.ChangedDate)
-		dateValue := task.ChangedDate
+		dateValue := formattedDate
 		if relativeTime != "" {
-			dateValue = fmt.Sprintf("%s %s", task.ChangedDate, relativeTime)
+			dateValue = fmt.Sprintf("%s %s", formattedDate, relativeTime)
 		}
 		cardContent.WriteString(labelStyle.Render("Last Updated:"))
 		cardContent.WriteString(valueStyle.Render(dateValue))
@@ -1199,10 +1240,12 @@ func (m model) View() string {
 		return m.renderDetailView()
 	case statePickerView:
 		return m.renderStatePickerView()
-	case searchView:
-		return m.renderSearchView()
 	case filterView:
 		return m.renderFilterView()
+	case findView:
+		return m.renderFindView()
+	case helpView:
+		return m.renderHelpView()
 	default:
 		return m.renderListView()
 	}
@@ -1213,7 +1256,7 @@ func (m model) renderListView() string {
 
 	// Title bar
 	title := "Azure DevOps - Work Items"
-	if m.searchActive {
+	if m.filterActive {
 		title += fmt.Sprintf(" (filtered: %d results)", len(m.filteredTasks))
 	}
 	content.WriteString(m.renderTitleBar(title))
@@ -1460,7 +1503,7 @@ func (m model) renderListView() string {
 	}
 
 	// Footer with keybindings
-	keybindings := "tab: cycle tabs • →/l: details • ↑/↓ or j/k: navigate\nenter: details • o: open in browser • /: search • f: filter • r: refresh • q: quit"
+	keybindings := "tab: cycle tabs • →/l: details • ↑/↓ or j/k: navigate\nenter: details • o: open in browser • /: filter • f: find • r: refresh • ?: help • q: quit"
 	content.WriteString(m.renderFooter(keybindings))
 
 	return content.String()
@@ -1482,7 +1525,7 @@ func (m model) renderDetailView() string {
 	content.WriteString("\n")
 
 	// Footer with keybindings
-	keybindings := "←/h/esc: back • o: open in browser • s: change state • q: quit"
+	keybindings := "←/h/esc: back • o: open in browser • s: change state • ?: help • q: quit"
 	content.WriteString(m.renderFooter(keybindings))
 
 	return content.String()
@@ -1526,13 +1569,13 @@ func (m model) renderStatePickerView() string {
 	return content.String()
 }
 
-func (m model) renderSearchView() string {
+func (m model) renderFilterView() string {
 	var content strings.Builder
 
 	// Title bar
-	titleText := "Search"
+	titleText := "Filter"
 	content.WriteString(m.renderTitleBar(titleText))
-	content.WriteString(m.searchInput.View() + "\n\n")
+	content.WriteString(m.filterInput.View() + "\n\n")
 
 	selectedStyle := lipgloss.NewStyle().
 		Background(lipgloss.Color("62")).
@@ -1562,7 +1605,7 @@ func (m model) renderSearchView() string {
 	resultCount := len(treeItems)
 
 	// Show result count
-	if m.searchInput.Value() != "" {
+	if m.filterInput.Value() != "" {
 		content.WriteString(dimStyle.Render(fmt.Sprintf("  %d/%d", resultCount, len(m.tasks))) + "\n\n")
 	} else {
 		content.WriteString(dimStyle.Render(fmt.Sprintf("  %d items", len(m.tasks))) + "\n\n")
@@ -1697,25 +1740,84 @@ func (m model) renderSearchView() string {
 	}
 
 	// Footer with keybindings
-	keybindings := "↑/↓ or ctrl+j/k: navigate • ctrl+d/u: half page • enter: open detail • esc: cancel"
+	keybindings := "↑/↓ or ctrl+j/k: navigate • ctrl+d/u: half page • enter: open detail • esc: cancel • ?: help"
 	content.WriteString(m.renderFooter(keybindings))
 
 	return content.String()
 }
 
-func (m model) renderFilterView() string {
+func (m model) renderFindView() string {
 	var content strings.Builder
 
 	// Title bar
-	titleText := "Filter Work Items"
+	titleText := "Find Work Items"
 	content.WriteString(m.renderTitleBar(titleText))
-	content.WriteString(m.filterInput.View() + "\n\n")
-	content.WriteString("Examples:\n")
-	content.WriteString("  - Press Enter to query all items\n")
-	content.WriteString("  - (Custom filters coming soon)\n")
+	content.WriteString(m.findInput.View() + "\n\n")
+
+	// Note about query behavior
+	noteStyle := lipgloss.NewStyle().
+		Foreground(lipgloss.Color("241")).
+		Italic(true)
+	content.WriteString(noteStyle.Render("Note: Queries all work items assigned to @Me") + "\n")
 
 	// Footer with keybindings
-	keybindings := "enter: apply filter • esc: cancel"
+	keybindings := "enter: apply find • esc: cancel"
+	content.WriteString(m.renderFooter(keybindings))
+
+	return content.String()
+}
+
+func (m model) renderHelpView() string {
+	var content strings.Builder
+
+	// Title bar
+	titleText := "Keybindings Help"
+	content.WriteString(m.renderTitleBar(titleText))
+
+	// Styles
+	sectionStyle := lipgloss.NewStyle().
+		Bold(true).
+		Foreground(lipgloss.Color("62")).
+		MarginTop(1).
+		MarginBottom(1)
+
+	keyStyle := lipgloss.NewStyle().
+		Foreground(lipgloss.Color("86")).
+		Bold(true).
+		Width(20)
+
+	descStyle := lipgloss.NewStyle().
+		Foreground(lipgloss.Color("230"))
+
+	// Global keybindings
+	content.WriteString(sectionStyle.Render("Global") + "\n")
+	content.WriteString(keyStyle.Render("?") + descStyle.Render("Show/hide this help") + "\n")
+	content.WriteString(keyStyle.Render("q, ctrl+c") + descStyle.Render("Quit application") + "\n")
+	content.WriteString(keyStyle.Render("r") + descStyle.Render("Refresh data") + "\n")
+	content.WriteString(keyStyle.Render("o") + descStyle.Render("Open current item in browser") + "\n\n")
+
+	// List view keybindings
+	content.WriteString(sectionStyle.Render("List View") + "\n")
+	content.WriteString(keyStyle.Render("tab") + descStyle.Render("Cycle through sprint tabs") + "\n")
+	content.WriteString(keyStyle.Render("↑/↓, j/k") + descStyle.Render("Navigate up/down") + "\n")
+	content.WriteString(keyStyle.Render("→/l, enter") + descStyle.Render("Open item details") + "\n")
+	content.WriteString(keyStyle.Render("/") + descStyle.Render("Filter items in current list") + "\n")
+	content.WriteString(keyStyle.Render("f") + descStyle.Render("Find items with dedicated query") + "\n\n")
+
+	// Detail view keybindings
+	content.WriteString(sectionStyle.Render("Detail View") + "\n")
+	content.WriteString(keyStyle.Render("←/h, esc, backspace") + descStyle.Render("Back to list") + "\n")
+	content.WriteString(keyStyle.Render("s") + descStyle.Render("Change item state") + "\n\n")
+
+	// Filter view keybindings
+	content.WriteString(sectionStyle.Render("Filter View") + "\n")
+	content.WriteString(keyStyle.Render("esc") + descStyle.Render("Cancel filter") + "\n")
+	content.WriteString(keyStyle.Render("enter") + descStyle.Render("Open selected item") + "\n")
+	content.WriteString(keyStyle.Render("↑/↓, ctrl+j/k") + descStyle.Render("Navigate results") + "\n")
+	content.WriteString(keyStyle.Render("ctrl+u/d") + descStyle.Render("Jump half page") + "\n")
+
+	// Footer with keybindings
+	keybindings := "?: close help • esc: close help • q: quit"
 	content.WriteString(m.renderFooter(keybindings))
 
 	return content.String()
