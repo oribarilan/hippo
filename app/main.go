@@ -16,6 +16,8 @@ import (
 	"github.com/joho/godotenv"
 )
 
+const version = "v0.1.0"
+
 type viewState int
 
 const (
@@ -1138,7 +1140,17 @@ func (m model) renderListView() string {
 	if m.searchActive {
 		title += fmt.Sprintf(" (filtered: %d results)", len(m.filteredTasks))
 	}
-	s := titleBarStyle.Render(title) + "\n\n"
+
+	// Calculate padding to align version to the right
+	versionText := version
+	availableWidth := m.width - len(title) - len(versionText) - 4 // 4 for padding (2 on each side)
+	if availableWidth < 0 {
+		availableWidth = 0
+	}
+	padding := strings.Repeat(" ", availableWidth)
+
+	titleWithVersion := title + padding + versionText
+	s := titleBarStyle.Render(titleWithVersion) + "\n\n"
 
 	// Render tabs
 	tabs := []string{}
@@ -1178,14 +1190,6 @@ func (m model) renderListView() string {
 	if m.statusMessage != "" {
 		msgStyle := lipgloss.NewStyle().Foreground(lipgloss.Color("86"))
 		s += msgStyle.Render(m.statusMessage) + "\n\n"
-	}
-
-	// Show loading stats
-	loaded := m.sprintLoaded[m.currentTab]
-	total := m.sprintCounts[m.currentTab]
-	if total > 0 {
-		infoStyle := lipgloss.NewStyle().Foreground(lipgloss.Color("241")).Italic(true)
-		s += infoStyle.Render(fmt.Sprintf("Loaded %d of %d items in this sprint", loaded, total)) + "\n\n"
 	}
 
 	treeItems := m.getVisibleTreeItems()
@@ -1371,7 +1375,18 @@ func (m model) renderDetailView() string {
 		Width(m.width).
 		Padding(0, 1)
 
-	titleBar := titleBarStyle.Render(fmt.Sprintf("Work Item #%d - %s", m.selectedTask.ID, m.selectedTask.Title))
+	titleText := fmt.Sprintf("Work Item #%d - %s", m.selectedTask.ID, m.selectedTask.Title)
+
+	// Calculate padding to align version to the right
+	versionText := version
+	availableWidth := m.width - len(titleText) - len(versionText) - 4 // 4 for padding (2 on each side)
+	if availableWidth < 0 {
+		availableWidth = 0
+	}
+	padding := strings.Repeat(" ", availableWidth)
+
+	titleWithVersion := titleText + padding + versionText
+	titleBar := titleBarStyle.Render(titleWithVersion)
 
 	// Help footer
 	helpStyle := lipgloss.NewStyle().
@@ -1411,7 +1426,18 @@ func (m model) renderStatePickerView() string {
 		Foreground(lipgloss.Color("230")).
 		Bold(true)
 
-	s := titleBarStyle.Render("Select New State") + "\n\n"
+	titleText := "Select New State"
+
+	// Calculate padding to align version to the right
+	versionText := version
+	availableWidth := m.width - len(titleText) - len(versionText) - 4 // 4 for padding (2 on each side)
+	if availableWidth < 0 {
+		availableWidth = 0
+	}
+	padding := strings.Repeat(" ", availableWidth)
+
+	titleWithVersion := titleText + padding + versionText
+	s := titleBarStyle.Render(titleWithVersion) + "\n\n"
 
 	if m.selectedTask != nil {
 		s += fmt.Sprintf("Current state: %s\n\n", m.selectedTask.State)
@@ -1486,7 +1512,18 @@ func (m model) renderSearchView() string {
 		Italic(true)
 
 	// Title bar with search prompt
-	s := titleBarStyle.Render("Search") + "\n\n"
+	titleText := "Search"
+
+	// Calculate padding to align version to the right
+	versionText := version
+	availableWidth := m.width - len(titleText) - len(versionText) - 4 // 4 for padding (2 on each side)
+	if availableWidth < 0 {
+		availableWidth = 0
+	}
+	padding := strings.Repeat(" ", availableWidth)
+
+	titleWithVersion := titleText + padding + versionText
+	s := titleBarStyle.Render(titleWithVersion) + "\n\n"
 	s += m.searchInput.View() + "\n\n"
 
 	treeItems := m.getVisibleTreeItems()
@@ -1656,7 +1693,18 @@ func (m model) renderFilterView() string {
 		Width(m.width).
 		Padding(0, 1)
 
-	s := titleBarStyle.Render("Filter Work Items") + "\n\n"
+	titleText := "Filter Work Items"
+
+	// Calculate padding to align version to the right
+	versionText := version
+	availableWidth := m.width - len(titleText) - len(versionText) - 4 // 4 for padding (2 on each side)
+	if availableWidth < 0 {
+		availableWidth = 0
+	}
+	padding := strings.Repeat(" ", availableWidth)
+
+	titleWithVersion := titleText + padding + versionText
+	s := titleBarStyle.Render(titleWithVersion) + "\n\n"
 	s += m.filterInput.View() + "\n\n"
 	s += "Examples:\n"
 	s += "  - Press Enter to query all items\n"
