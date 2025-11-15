@@ -1190,10 +1190,6 @@ func (m model) renderFooter(keybindings string) string {
 }
 
 func (m model) View() string {
-	if m.loading {
-		return fmt.Sprintf("\n  %s %s\n\n", m.spinner.View(), m.statusMessage)
-	}
-
 	if m.err != nil {
 		return fmt.Sprintf("\n  Error: %v\n\n", m.err)
 	}
@@ -1292,6 +1288,20 @@ func (m model) renderListView() string {
 	if m.statusMessage != "" {
 		msgStyle := lipgloss.NewStyle().Foreground(lipgloss.Color("86"))
 		content.WriteString(msgStyle.Render(m.statusMessage) + "\n\n")
+	}
+
+	// Show loader if loading
+	if m.loading {
+		loaderStyle := lipgloss.NewStyle().
+			Foreground(lipgloss.Color("86")).
+			MarginLeft(2)
+		content.WriteString(loaderStyle.Render(fmt.Sprintf("%s %s", m.spinner.View(), m.statusMessage)) + "\n\n")
+
+		// Footer with keybindings
+		keybindings := "tab: cycle tabs • →/l: details • ↑/↓ or j/k: navigate\nenter: details • o: open in browser • /: search • f: filter • r: refresh • q: quit"
+		content.WriteString(m.renderFooter(keybindings))
+
+		return content.String()
 	}
 
 	treeItems := m.getVisibleTreeItems()
