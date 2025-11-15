@@ -1136,67 +1136,109 @@ func (m model) renderListView() string {
 
 	// Style for tree edges with more vibrant color
 	edgeStyle := lipgloss.NewStyle().Foreground(lipgloss.Color("63")) // Brighter blue-purple
+	edgeStyleSelected := lipgloss.NewStyle().
+		Foreground(lipgloss.Color("230")).
+		Background(lipgloss.Color("62"))
 
 	// Icon style
 	iconStyle := lipgloss.NewStyle().Foreground(lipgloss.Color("212"))
+	iconStyleSelected := lipgloss.NewStyle().
+		Foreground(lipgloss.Color("230")).
+		Background(lipgloss.Color("62"))
 
 	for i, treeItem := range treeItems {
+		isSelected := m.cursor == i
+
 		cursor := " "
-		if m.cursor == i {
+		if isSelected {
 			cursor = "❯"
 		}
 
 		// Get tree drawing prefix and color it
-		treePrefix := edgeStyle.Render(getTreePrefix(treeItem))
+		var treePrefix string
+		if isSelected {
+			treePrefix = edgeStyleSelected.Render(getTreePrefix(treeItem))
+		} else {
+			treePrefix = edgeStyle.Render(getTreePrefix(treeItem))
+		}
 
 		// Get work item type icon
 		icon := getWorkItemIcon(treeItem.WorkItem.WorkItemType)
-		styledIcon := iconStyle.Render(icon)
+		var styledIcon string
+		if isSelected {
+			styledIcon = iconStyleSelected.Render(icon)
+		} else {
+			styledIcon = iconStyle.Render(icon)
+		}
 
 		// Get state category to determine styling
 		category := m.getStateCategory(treeItem.WorkItem.State)
 
-		// Choose state style based on category
+		// Choose state style based on category and selection
 		var stateStyle lipgloss.Style
 		var itemTitleStyle lipgloss.Style
 
-		switch category {
-		case "Proposed":
-			stateStyle = proposedStateStyle
-			itemTitleStyle = lipgloss.NewStyle().Foreground(lipgloss.Color("248")) // Light gray
-		case "InProgress":
-			stateStyle = inProgressStateStyle
-			itemTitleStyle = lipgloss.NewStyle().Foreground(lipgloss.Color("255")) // White
-		case "Completed":
-			stateStyle = completedStateStyle
-			itemTitleStyle = lipgloss.NewStyle().Strikethrough(true).Foreground(lipgloss.Color("243"))
-		case "Removed":
-			stateStyle = removedStateStyle
-			itemTitleStyle = lipgloss.NewStyle().Strikethrough(true).Foreground(lipgloss.Color("241"))
-		default:
-			stateStyle = proposedStateStyle
-			itemTitleStyle = lipgloss.NewStyle().Foreground(lipgloss.Color("248"))
-		}
+		if isSelected {
+			// When selected, use bright colors with selected background
+			stateStyle = lipgloss.NewStyle().
+				Foreground(lipgloss.Color("230")).
+				Background(lipgloss.Color("62")).
+				Bold(true)
+			itemTitleStyle = lipgloss.NewStyle().
+				Foreground(lipgloss.Color("230")).
+				Background(lipgloss.Color("62")).
+				Bold(true)
+		} else {
+			// Normal styling when not selected
+			switch category {
+			case "Proposed":
+				stateStyle = proposedStateStyle
+				itemTitleStyle = lipgloss.NewStyle().Foreground(lipgloss.Color("248")) // Light gray
+			case "InProgress":
+				stateStyle = inProgressStateStyle
+				itemTitleStyle = lipgloss.NewStyle().Foreground(lipgloss.Color("255")) // White
+			case "Completed":
+				stateStyle = completedStateStyle
+				itemTitleStyle = lipgloss.NewStyle().Strikethrough(true).Foreground(lipgloss.Color("243"))
+			case "Removed":
+				stateStyle = removedStateStyle
+				itemTitleStyle = lipgloss.NewStyle().Strikethrough(true).Foreground(lipgloss.Color("241"))
+			default:
+				stateStyle = proposedStateStyle
+				itemTitleStyle = lipgloss.NewStyle().Foreground(lipgloss.Color("248"))
+			}
 
-		// Make title bold if this is a parent (has children)
-		title := treeItem.WorkItem.Title
-		if len(treeItem.WorkItem.Children) > 0 {
-			itemTitleStyle = itemTitleStyle.Bold(true)
+			// Make title bold if this is a parent (has children)
+			if len(treeItem.WorkItem.Children) > 0 {
+				itemTitleStyle = itemTitleStyle.Bold(true)
+			}
 		}
 
 		// Apply the styling
-		title = itemTitleStyle.Render(title)
+		title := itemTitleStyle.Render(treeItem.WorkItem.Title)
+		state := stateStyle.Render(treeItem.WorkItem.State)
 
 		// Build the line with icon
-		line := fmt.Sprintf("%s %s%s %s %s",
-			cursor,
-			treePrefix,
-			styledIcon,
-			title,
-			stateStyle.Render(treeItem.WorkItem.State))
-
-		if m.cursor == i {
-			line = selectedStyle.Render(line)
+		var line string
+		if isSelected {
+			// Apply background to cursor and spacing too
+			cursorStyled := selectedStyle.Render(cursor)
+			spacer := selectedStyle.Render(" ")
+			line = fmt.Sprintf("%s%s%s%s%s%s%s",
+				cursorStyled,
+				spacer,
+				treePrefix,
+				styledIcon,
+				spacer,
+				title,
+				spacer+state)
+		} else {
+			line = fmt.Sprintf("%s %s%s %s %s",
+				cursor,
+				treePrefix,
+				styledIcon,
+				title,
+				state)
 		}
 
 		s += line + "\n"
@@ -1361,67 +1403,109 @@ func (m model) renderSearchView() string {
 
 	// Style for tree edges with vibrant color
 	edgeStyle := lipgloss.NewStyle().Foreground(lipgloss.Color("63"))
+	edgeStyleSelected := lipgloss.NewStyle().
+		Foreground(lipgloss.Color("230")).
+		Background(lipgloss.Color("62"))
 
 	// Icon style
 	iconStyle := lipgloss.NewStyle().Foreground(lipgloss.Color("212"))
+	iconStyleSelected := lipgloss.NewStyle().
+		Foreground(lipgloss.Color("230")).
+		Background(lipgloss.Color("62"))
 
 	for i := startIdx; i < endIdx && i < resultCount; i++ {
 		treeItem := treeItems[i]
+		isSelected := m.cursor == i
+
 		cursor := "  "
-		if m.cursor == i {
+		if isSelected {
 			cursor = "❯ "
 		}
 
 		// Get tree drawing prefix and color it
-		treePrefix := edgeStyle.Render(getTreePrefix(treeItem))
+		var treePrefix string
+		if isSelected {
+			treePrefix = edgeStyleSelected.Render(getTreePrefix(treeItem))
+		} else {
+			treePrefix = edgeStyle.Render(getTreePrefix(treeItem))
+		}
 
 		// Get work item type icon
 		icon := getWorkItemIcon(treeItem.WorkItem.WorkItemType)
-		styledIcon := iconStyle.Render(icon)
+		var styledIcon string
+		if isSelected {
+			styledIcon = iconStyleSelected.Render(icon)
+		} else {
+			styledIcon = iconStyle.Render(icon)
+		}
 
 		// Get state category to determine styling
 		category := m.getStateCategory(treeItem.WorkItem.State)
 
-		// Choose state style based on category
+		// Choose state style based on category and selection
 		var stateStyle lipgloss.Style
 		var itemTitleStyle lipgloss.Style
 
-		switch category {
-		case "Proposed":
-			stateStyle = proposedStateStyle
-			itemTitleStyle = lipgloss.NewStyle().Foreground(lipgloss.Color("248"))
-		case "InProgress":
-			stateStyle = inProgressStateStyle
-			itemTitleStyle = lipgloss.NewStyle().Foreground(lipgloss.Color("255"))
-		case "Completed":
-			stateStyle = completedStateStyle
-			itemTitleStyle = lipgloss.NewStyle().Strikethrough(true).Foreground(lipgloss.Color("243"))
-		case "Removed":
-			stateStyle = removedStateStyle
-			itemTitleStyle = lipgloss.NewStyle().Strikethrough(true).Foreground(lipgloss.Color("241"))
-		default:
-			stateStyle = proposedStateStyle
-			itemTitleStyle = lipgloss.NewStyle().Foreground(lipgloss.Color("248"))
+		if isSelected {
+			// When selected, use bright colors with selected background
+			stateStyle = lipgloss.NewStyle().
+				Foreground(lipgloss.Color("230")).
+				Background(lipgloss.Color("62")).
+				Bold(true)
+			itemTitleStyle = lipgloss.NewStyle().
+				Foreground(lipgloss.Color("230")).
+				Background(lipgloss.Color("62")).
+				Bold(true)
+		} else {
+			// Normal styling when not selected
+			switch category {
+			case "Proposed":
+				stateStyle = proposedStateStyle
+				itemTitleStyle = lipgloss.NewStyle().Foreground(lipgloss.Color("248"))
+			case "InProgress":
+				stateStyle = inProgressStateStyle
+				itemTitleStyle = lipgloss.NewStyle().Foreground(lipgloss.Color("255"))
+			case "Completed":
+				stateStyle = completedStateStyle
+				itemTitleStyle = lipgloss.NewStyle().Strikethrough(true).Foreground(lipgloss.Color("243"))
+			case "Removed":
+				stateStyle = removedStateStyle
+				itemTitleStyle = lipgloss.NewStyle().Strikethrough(true).Foreground(lipgloss.Color("241"))
+			default:
+				stateStyle = proposedStateStyle
+				itemTitleStyle = lipgloss.NewStyle().Foreground(lipgloss.Color("248"))
+			}
+
+			// Make title bold if this is a parent
+			if len(treeItem.WorkItem.Children) > 0 {
+				itemTitleStyle = itemTitleStyle.Bold(true)
+			}
 		}
 
-		// Make title bold if this is a parent
-		title := treeItem.WorkItem.Title
-		if len(treeItem.WorkItem.Children) > 0 {
-			itemTitleStyle = itemTitleStyle.Bold(true)
-		}
+		// Apply the styling
+		title := itemTitleStyle.Render(treeItem.WorkItem.Title)
+		state := stateStyle.Render(treeItem.WorkItem.State)
 
-		// Apply the category-based styling
-		title = itemTitleStyle.Render(title)
-
-		line := fmt.Sprintf("%s%s%s %s %s",
-			cursor,
-			treePrefix,
-			styledIcon,
-			title,
-			stateStyle.Render(treeItem.WorkItem.State))
-
-		if m.cursor == i {
-			line = selectedStyle.Render(line)
+		// Build the line with icon
+		var line string
+		if isSelected {
+			// Apply background to cursor and spacing too
+			cursorStyled := selectedStyle.Render(cursor)
+			spacer := selectedStyle.Render(" ")
+			line = fmt.Sprintf("%s%s%s%s%s%s",
+				cursorStyled,
+				treePrefix,
+				styledIcon,
+				spacer,
+				title,
+				spacer+state)
+		} else {
+			line = fmt.Sprintf("%s%s%s %s %s",
+				cursor,
+				treePrefix,
+				styledIcon,
+				title,
+				state)
 		}
 
 		s += line + "\n"
