@@ -31,12 +31,26 @@ const (
 	editView
 )
 
+type appMode int
+
+const (
+	sprintMode appMode = iota
+	backlogMode
+)
+
 type sprintTab int
 
 const (
 	previousSprint sprintTab = iota
 	currentSprint
 	nextSprint
+)
+
+type backlogTab int
+
+const (
+	recentBacklog backlogTab = iota
+	abandonedWork
 )
 
 type Sprint struct {
@@ -47,38 +61,45 @@ type Sprint struct {
 }
 
 type model struct {
-	tasks           []WorkItem
-	filteredTasks   []WorkItem
-	cursor          int
-	state           viewState
-	selectedTask    *WorkItem
-	selectedTaskID  int // Track which task the viewport is showing
-	loading         bool
-	loadingMore     bool // Track if we're loading more items (for inline spinner)
-	err             error
-	client          *AzureDevOpsClient
-	spinner         spinner.Model
-	filterInput     textinput.Model
-	findInput       textinput.Model
-	viewport        viewport.Model
-	viewportReady   bool
-	stateCursor     int
-	availableStates []string
-	stateCategories map[string]string // Map of state name to category (Proposed, InProgress, Completed, etc.)
-	organizationURL string
-	projectName     string
-	filterActive    bool
-	statusMessage   string
-	lastActionLog   string    // Log line showing the result of the last action
-	lastActionTime  time.Time // Timestamp of the last action
-	currentTab      sprintTab
-	sprints         map[sprintTab]*Sprint
-	sprintCounts    map[sprintTab]int  // Total count per sprint
-	sprintLoaded    map[sprintTab]int  // Loaded count per sprint
-	sprintAttempted map[sprintTab]bool // Whether we've attempted to load this sprint
-	initialLoading  int                // Count of initial sprint loads pending
-	width           int                // Terminal width
-	height          int                // Terminal height
+	tasks             []WorkItem
+	sprintTasks       []WorkItem                // Tasks for sprint mode only
+	backlogTasks      map[backlogTab][]WorkItem // Tasks per backlog tab
+	filteredTasks     []WorkItem
+	cursor            int
+	state             viewState
+	selectedTask      *WorkItem
+	selectedTaskID    int // Track which task the viewport is showing
+	loading           bool
+	loadingMore       bool // Track if we're loading more items (for inline spinner)
+	err               error
+	client            *AzureDevOpsClient
+	spinner           spinner.Model
+	filterInput       textinput.Model
+	findInput         textinput.Model
+	viewport          viewport.Model
+	viewportReady     bool
+	stateCursor       int
+	availableStates   []string
+	stateCategories   map[string]string // Map of state name to category (Proposed, InProgress, Completed, etc.)
+	organizationURL   string
+	projectName       string
+	filterActive      bool
+	statusMessage     string
+	lastActionLog     string    // Log line showing the result of the last action
+	lastActionTime    time.Time // Timestamp of the last action
+	currentMode       appMode
+	currentTab        sprintTab
+	currentBacklogTab backlogTab
+	sprints           map[sprintTab]*Sprint
+	sprintCounts      map[sprintTab]int   // Total count per sprint
+	sprintLoaded      map[sprintTab]int   // Loaded count per sprint
+	sprintAttempted   map[sprintTab]bool  // Whether we've attempted to load this sprint
+	backlogCounts     map[backlogTab]int  // Total count per backlog tab
+	backlogLoaded     map[backlogTab]int  // Loaded count per backlog tab
+	backlogAttempted  map[backlogTab]bool // Whether we've attempted to load this backlog tab
+	initialLoading    int                 // Count of initial sprint loads pending
+	width             int                 // Terminal width
+	height            int                 // Terminal height
 	// Edit mode fields
 	editTitleInput       textinput.Model
 	editDescriptionInput textarea.Model
@@ -137,6 +158,8 @@ func initialModel() model {
 
 	return model{
 		tasks:                []WorkItem{},
+		sprintTasks:          []WorkItem{},
+		backlogTasks:         make(map[backlogTab][]WorkItem),
 		filteredTasks:        []WorkItem{},
 		cursor:               0,
 		state:                listView,
@@ -148,11 +171,16 @@ func initialModel() model {
 		stateCategories:      make(map[string]string),
 		organizationURL:      os.Getenv("AZURE_DEVOPS_ORG_URL"),
 		projectName:          os.Getenv("AZURE_DEVOPS_PROJECT"),
+		currentMode:          sprintMode,
 		currentTab:           currentSprint,
+		currentBacklogTab:    recentBacklog,
 		sprints:              make(map[sprintTab]*Sprint),
 		sprintCounts:         make(map[sprintTab]int),
 		sprintLoaded:         make(map[sprintTab]int),
 		sprintAttempted:      make(map[sprintTab]bool),
+		backlogCounts:        make(map[backlogTab]int),
+		backlogLoaded:        make(map[backlogTab]int),
+		backlogAttempted:     make(map[backlogTab]bool),
 		editTitleInput:       editTitleInput,
 		editDescriptionInput: editDescriptionInput,
 		editFieldCursor:      0,
@@ -161,12 +189,13 @@ func initialModel() model {
 }
 
 type tasksLoadedMsg struct {
-	tasks      []WorkItem
-	err        error
-	client     *AzureDevOpsClient
-	totalCount int
-	append     bool
-	forTab     *sprintTab // Which tab these tasks are for
+	tasks         []WorkItem
+	err           error
+	client        *AzureDevOpsClient
+	totalCount    int
+	append        bool
+	forTab        *sprintTab  // Which sprint tab these tasks are for
+	forBacklogTab *backlogTab // Which backlog tab these tasks are for
 }
 
 type stateUpdatedMsg struct {
@@ -220,6 +249,70 @@ func loadTasksForSprint(client *AzureDevOpsClient, excludeIDs []int, sprintPath 
 func loadInitialTasksForSprint(client *AzureDevOpsClient, sprintPath string, tab sprintTab) tea.Cmd {
 	tabCopy := tab
 	return loadTasksForSprint(client, nil, sprintPath, 10, &tabCopy)
+}
+
+func loadTasksForBacklogTab(client *AzureDevOpsClient, tab backlogTab, currentSprintPath string) tea.Cmd {
+	return func() tea.Msg {
+		var tasks []WorkItem
+		var err error
+		var totalCount int
+
+		switch tab {
+		case recentBacklog:
+			tasks, err = client.GetRecentBacklogItems(30) // Load 30 items initially
+			if err == nil {
+				totalCount, _ = client.GetRecentBacklogItemsCount()
+			}
+		case abandonedWork:
+			tasks, err = client.GetAbandonedWorkItems(currentSprintPath, 30)
+			if err == nil {
+				totalCount, _ = client.GetAbandonedWorkItemsCount(currentSprintPath)
+			}
+		}
+
+		if err != nil {
+			return tasksLoadedMsg{err: err, append: false, forTab: nil, forBacklogTab: &tab}
+		}
+
+		if totalCount == 0 {
+			totalCount = len(tasks)
+		}
+
+		tabCopy := tab
+		return tasksLoadedMsg{tasks: tasks, err: err, client: client, totalCount: totalCount, append: false, forTab: nil, forBacklogTab: &tabCopy}
+	}
+}
+
+func loadMoreBacklogItems(client *AzureDevOpsClient, tab backlogTab, currentSprintPath string, excludeIDs []int) tea.Cmd {
+	return func() tea.Msg {
+		var tasks []WorkItem
+		var err error
+		var totalCount int
+
+		switch tab {
+		case recentBacklog:
+			tasks, err = client.GetRecentBacklogItemsExcluding(excludeIDs, 30)
+			if err == nil {
+				totalCount, _ = client.GetRecentBacklogItemsCount()
+			}
+		case abandonedWork:
+			tasks, err = client.GetAbandonedWorkItemsExcluding(excludeIDs, currentSprintPath, 30)
+			if err == nil {
+				totalCount, _ = client.GetAbandonedWorkItemsCount(currentSprintPath)
+			}
+		}
+
+		if err != nil {
+			return tasksLoadedMsg{err: err, append: true, forTab: nil, forBacklogTab: &tab}
+		}
+
+		if totalCount == 0 {
+			totalCount = len(tasks)
+		}
+
+		tabCopy := tab
+		return tasksLoadedMsg{tasks: tasks, err: err, client: client, totalCount: totalCount, append: true, forTab: nil, forBacklogTab: &tabCopy}
+	}
 }
 
 func loadWorkItemStates(client *AzureDevOpsClient, workItemType string) tea.Cmd {
@@ -533,6 +626,30 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		case "ctrl+c", "q":
 			return m, tea.Quit
 
+		case "1":
+			// Switch to Sprint Mode
+			if m.state == listView && m.currentMode != sprintMode {
+				m.currentMode = sprintMode
+				m.cursor = 0
+				m.setActionLog("Switched to Sprint Mode")
+			}
+			return m, nil
+
+		case "2":
+			// Switch to Backlog Mode
+			if m.state == listView && m.currentMode != backlogMode {
+				m.currentMode = backlogMode
+				m.cursor = 0
+				// Load backlog data if not attempted yet
+				if !m.backlogAttempted[m.currentBacklogTab] && m.client != nil {
+					m.loading = true
+					tab := m.currentBacklogTab
+					return m, tea.Batch(loadTasksForBacklogTab(m.client, tab, m.getCurrentSprintPath()), m.spinner.Tick)
+				}
+				m.setActionLog("Switched to Backlog Mode")
+			}
+			return m, nil
+
 		case "?":
 			// Show help modal
 			if m.state == helpView {
@@ -552,18 +669,31 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 					m.setActionLog(fmt.Sprintf("Refreshing #%d...", m.selectedTask.ID))
 					return m, tea.Batch(refreshWorkItem(m.client, m.selectedTask.ID), m.spinner.Tick)
 				}
-				// Otherwise, refresh everything
+				// Otherwise, refresh everything based on current mode
 				m.loading = true
 				m.statusMessage = "Refreshing..."
 				m.setActionLog("Refreshing data...")
 				m.filterActive = false
 				m.filterInput.SetValue("")
 				m.filteredTasks = nil
-				m.tasks = nil // Clear tasks to prevent duplication
-				m.sprintCounts = make(map[sprintTab]int)
-				m.sprintLoaded = make(map[sprintTab]int)
-				m.sprintAttempted = make(map[sprintTab]bool)
-				return m, tea.Batch(loadTasks(m.client), loadSprints(m.client), m.spinner.Tick)
+
+				if m.currentMode == sprintMode {
+					// Clear sprint data
+					m.sprintTasks = nil
+					m.sprintCounts = make(map[sprintTab]int)
+					m.sprintLoaded = make(map[sprintTab]int)
+					m.sprintAttempted = make(map[sprintTab]bool)
+					return m, tea.Batch(loadTasks(m.client), loadSprints(m.client), m.spinner.Tick)
+				} else {
+					// Clear backlog data
+					m.backlogTasks = make(map[backlogTab][]WorkItem)
+					m.backlogCounts = make(map[backlogTab]int)
+					m.backlogLoaded = make(map[backlogTab]int)
+					m.backlogAttempted = make(map[backlogTab]bool)
+					// Reload current backlog tab
+					tab := m.currentBacklogTab
+					return m, tea.Batch(loadTasksForBacklogTab(m.client, tab, m.getCurrentSprintPath()), m.spinner.Tick)
+				}
 			}
 			return m, nil
 
@@ -640,15 +770,26 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 					m.state = detailView
 				}
 			case "tab":
-				// Cycle through tabs
-				m.currentTab = (m.currentTab + 1) % 3
-				m.cursor = 0
-				// Load sprint data if not attempted yet
-				if !m.sprintAttempted[m.currentTab] && m.sprints[m.currentTab] != nil && m.client != nil {
-					sprint := m.sprints[m.currentTab]
-					m.loading = true
-					tab := m.currentTab
-					return m, tea.Batch(loadTasksForSprint(m.client, nil, sprint.Path, 10, &tab), m.spinner.Tick)
+				// Cycle through tabs based on current mode
+				if m.currentMode == sprintMode {
+					m.currentTab = (m.currentTab + 1) % 3
+					m.cursor = 0
+					// Load sprint data if not attempted yet
+					if !m.sprintAttempted[m.currentTab] && m.sprints[m.currentTab] != nil && m.client != nil {
+						sprint := m.sprints[m.currentTab]
+						m.loading = true
+						tab := m.currentTab
+						return m, tea.Batch(loadTasksForSprint(m.client, nil, sprint.Path, 10, &tab), m.spinner.Tick)
+					}
+				} else if m.currentMode == backlogMode {
+					m.currentBacklogTab = (m.currentBacklogTab + 1) % 2
+					m.cursor = 0
+					// Load backlog data if not attempted yet
+					if !m.backlogAttempted[m.currentBacklogTab] && m.client != nil {
+						m.loading = true
+						tab := m.currentBacklogTab
+						return m, tea.Batch(loadTasksForBacklogTab(m.client, tab, m.getCurrentSprintPath()), m.spinner.Tick)
+					}
 				}
 			case "up", "k":
 				if m.cursor > 0 {
@@ -668,27 +809,37 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				treeItems := m.getVisibleTreeItems()
 				// Check if cursor is on "Load More" item
 				if m.cursor == len(treeItems) && m.hasMoreItems() {
-					// Load more items by excluding already loaded IDs for current sprint
 					if m.client != nil {
 						m.loadingMore = true
 
-						// Get current sprint path
-						sprint := m.sprints[m.currentTab]
-						sprintPath := ""
-						if sprint != nil {
-							sprintPath = sprint.Path
-						}
+						if m.currentMode == sprintMode {
+							// Load more items by excluding already loaded IDs for current sprint
+							// Get current sprint path
+							sprint := m.sprints[m.currentTab]
+							sprintPath := ""
+							if sprint != nil {
+								sprintPath = sprint.Path
+							}
 
-						// Collect all currently loaded IDs in this sprint to exclude
-						excludeIDs := make([]int, 0)
-						for _, task := range m.tasks {
-							if task.IterationPath == sprintPath {
+							// Collect all currently loaded IDs in this sprint to exclude
+							excludeIDs := make([]int, 0)
+							for _, task := range m.sprintTasks {
+								if task.IterationPath == sprintPath {
+									excludeIDs = append(excludeIDs, task.ID)
+								}
+							}
+
+							tab := m.currentTab
+							return m, tea.Batch(loadTasksForSprint(m.client, excludeIDs, sprintPath, 30, &tab), m.spinner.Tick)
+						} else if m.currentMode == backlogMode {
+							// Load more items for backlog mode
+							// Collect all currently loaded IDs in this backlog tab to exclude
+							excludeIDs := make([]int, 0)
+							for _, task := range m.backlogTasks[m.currentBacklogTab] {
 								excludeIDs = append(excludeIDs, task.ID)
 							}
+							return m, tea.Batch(loadMoreBacklogItems(m.client, m.currentBacklogTab, m.getCurrentSprintPath(), excludeIDs), m.spinner.Tick)
 						}
-
-						tab := m.currentTab
-						return m, tea.Batch(loadTasksForSprint(m.client, excludeIDs, sprintPath, 30, &tab), m.spinner.Tick)
 					}
 				} else if len(treeItems) > 0 && m.cursor < len(treeItems) {
 					m.selectedTask = treeItems[m.cursor].WorkItem
@@ -723,58 +874,91 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				m.loading = false
 			}
 		} else {
-			// Determine which tab these tasks are for
-			targetTab := m.currentTab
+			// Handle sprint tab loading
 			if msg.forTab != nil {
-				targetTab = *msg.forTab
-			}
+				targetTab := *msg.forTab
 
-			if msg.append {
-				// Append new tasks to existing ones (load more scenario)
-				m.tasks = append(m.tasks, msg.tasks...)
+				if msg.append {
+					// Append new tasks to existing ones (load more scenario)
+					m.sprintTasks = append(m.sprintTasks, msg.tasks...)
 
-				// Update sprint-specific counts
-				// Add the new items count to the existing loaded count
-				m.sprintLoaded[targetTab] = m.sprintLoaded[targetTab] + len(msg.tasks)
-				m.sprintCounts[targetTab] = msg.totalCount
+					// Update sprint-specific counts
+					m.sprintLoaded[targetTab] = m.sprintLoaded[targetTab] + len(msg.tasks)
+					m.sprintCounts[targetTab] = msg.totalCount
 
-				m.setActionLog(fmt.Sprintf("Loaded %d more items", len(msg.tasks)))
-				m.loading = false
-				m.loadingMore = false
-			} else {
-				// Initial load or replace
-				if len(m.tasks) == 0 {
-					// Very first load
-					m.tasks = msg.tasks
-				} else {
-					// Append to existing (for other sprint loads)
-					m.tasks = append(m.tasks, msg.tasks...)
-				}
-				m.filteredTasks = nil
-				if targetTab == m.currentTab {
-					m.cursor = 0
-				}
-				m.statusMessage = ""
-
-				// All tasks in msg.tasks are for this sprint (filtered by API)
-				m.sprintLoaded[targetTab] = len(msg.tasks)
-				m.sprintCounts[targetTab] = msg.totalCount
-				m.sprintAttempted[targetTab] = true // Mark as attempted
-
-				// If this was part of initial loading, decrement counter
-				if m.initialLoading > 0 {
-					m.initialLoading--
-					if m.initialLoading == 0 {
-						m.loading = false
-						// Set log message after all initial sprints are loaded
-						m.setActionLog("Loaded previous, current, and next sprint")
-					}
-				} else {
+					m.setActionLog(fmt.Sprintf("Loaded %d more items", len(msg.tasks)))
 					m.loading = false
-					// Only set individual load message if not part of initial loading
+					m.loadingMore = false
+				} else {
+					// Initial load or replace
+					if len(m.sprintTasks) == 0 {
+						// Very first load
+						m.sprintTasks = msg.tasks
+					} else {
+						// Append to existing (for other sprint loads)
+						m.sprintTasks = append(m.sprintTasks, msg.tasks...)
+					}
+					m.filteredTasks = nil
+					if targetTab == m.currentTab && m.currentMode == sprintMode {
+						m.cursor = 0
+					}
+					m.statusMessage = ""
+
+					// All tasks in msg.tasks are for this sprint (filtered by API)
+					m.sprintLoaded[targetTab] = len(msg.tasks)
+					m.sprintCounts[targetTab] = msg.totalCount
+					m.sprintAttempted[targetTab] = true // Mark as attempted
+
+					// If this was part of initial loading, decrement counter
+					if m.initialLoading > 0 {
+						m.initialLoading--
+						if m.initialLoading == 0 {
+							m.loading = false
+							// Set log message after all initial sprints are loaded
+							m.setActionLog("Loaded previous, current, and next sprint")
+						}
+					} else {
+						m.loading = false
+						// Only set individual load message if not part of initial loading
+						m.setActionLog(fmt.Sprintf("Loaded %d items", len(msg.tasks)))
+					}
+				}
+			} else if msg.forBacklogTab != nil {
+				// Handle backlog tab loading
+				targetTab := *msg.forBacklogTab
+
+				if msg.append {
+					// Append new tasks to existing ones (load more scenario)
+					existing := m.backlogTasks[targetTab]
+					m.backlogTasks[targetTab] = append(existing, msg.tasks...)
+
+					// Update backlog-specific counts
+					m.backlogLoaded[targetTab] = m.backlogLoaded[targetTab] + len(msg.tasks)
+					m.backlogCounts[targetTab] = msg.totalCount
+
+					m.setActionLog(fmt.Sprintf("Loaded %d more items", len(msg.tasks)))
+					m.loading = false
+					m.loadingMore = false
+				} else {
+					// Store tasks for specific backlog tab (each tab is independent)
+					m.backlogTasks[targetTab] = msg.tasks
+
+					m.filteredTasks = nil
+					if targetTab == m.currentBacklogTab && m.currentMode == backlogMode {
+						m.cursor = 0
+					}
+					m.statusMessage = ""
+
+					// Update backlog-specific counts
+					m.backlogLoaded[targetTab] = len(msg.tasks)
+					m.backlogCounts[targetTab] = msg.totalCount
+					m.backlogAttempted[targetTab] = true // Mark as attempted
+
+					m.loading = false
 					m.setActionLog(fmt.Sprintf("Loaded %d items", len(msg.tasks)))
 				}
 			}
+
 			// Store the client if it was passed
 			if msg.client != nil {
 				m.client = msg.client
@@ -863,16 +1047,19 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			// Update the selected task in detail view
 			m.selectedTask = msg.workItem
 
-			// Also update the item in the tasks list
-			for i := range m.tasks {
-				if m.tasks[i].ID == msg.workItem.ID {
+			// Also update the item in the appropriate tasks list
+			tasks := m.getCurrentTasks()
+			for i := range tasks {
+				if tasks[i].ID == msg.workItem.ID {
 					// Preserve children since they're not loaded in single item refresh
-					existingChildren := m.tasks[i].Children
-					m.tasks[i] = *msg.workItem
-					m.tasks[i].Children = existingChildren
+					existingChildren := tasks[i].Children
+					tasks[i] = *msg.workItem
+					tasks[i].Children = existingChildren
 					break
 				}
 			}
+			// Update the appropriate list
+			m.setCurrentTasks(tasks)
 
 			m.setActionLog(fmt.Sprintf("Refreshed #%d", msg.workItem.ID))
 		}
@@ -1034,8 +1221,9 @@ func (m *model) filterSearch() {
 		return
 	}
 
+	currentTasks := m.getCurrentTasks()
 	var filtered []WorkItem
-	for _, task := range m.tasks {
+	for _, task := range currentTasks {
 		if strings.Contains(strings.ToLower(task.Title), query) ||
 			strings.Contains(fmt.Sprintf("%d", task.ID), query) {
 			filtered = append(filtered, task)
@@ -1045,28 +1233,37 @@ func (m *model) filterSearch() {
 }
 
 func (m model) getVisibleTasks() []WorkItem {
-	tasks := m.tasks
+	tasks := m.getCurrentTasks()
 
 	// Apply filter if active
 	if m.filterActive && m.filteredTasks != nil {
 		tasks = m.filteredTasks
 	}
 
-	// Apply sprint filter
-	sprint := m.sprints[m.currentTab]
-	if sprint == nil || sprint.Path == "" {
-		// If no sprint data available, show all tasks
+	// Filter based on current mode
+	if m.currentMode == sprintMode {
+		// Apply sprint filter
+		sprint := m.sprints[m.currentTab]
+		if sprint == nil || sprint.Path == "" {
+			// If no sprint data available, show all tasks
+			return tasks
+		}
+
+		var filtered []WorkItem
+		for _, task := range tasks {
+			if task.IterationPath == sprint.Path {
+				filtered = append(filtered, task)
+			}
+		}
+
+		return filtered
+	} else if m.currentMode == backlogMode {
+		// In backlog mode, tasks are already filtered by the query
+		// No additional filtering needed
 		return tasks
 	}
 
-	var filtered []WorkItem
-	for _, task := range tasks {
-		if task.IterationPath == sprint.Path {
-			filtered = append(filtered, task)
-		}
-	}
-
-	return filtered
+	return tasks
 }
 
 // getVisibleTreeItems returns visible tasks organized as a tree structure
@@ -1084,16 +1281,31 @@ func (m model) getVisibleTreeItems() []TreeItem {
 }
 
 func (m model) hasMoreItems() bool {
-	// Check if there are more items in the current sprint that we haven't loaded yet
-	loaded := m.sprintLoaded[m.currentTab]
-	total := m.sprintCounts[m.currentTab]
-	return loaded < total
+	if m.currentMode == sprintMode {
+		// Check if there are more items in the current sprint that we haven't loaded yet
+		loaded := m.sprintLoaded[m.currentTab]
+		total := m.sprintCounts[m.currentTab]
+		return loaded < total
+	} else if m.currentMode == backlogMode {
+		// Check if there are more items in the current backlog tab
+		loaded := m.backlogLoaded[m.currentBacklogTab]
+		total := m.backlogCounts[m.currentBacklogTab]
+		return loaded < total
+	}
+	return false
 }
 
 func (m model) getRemainingCount() int {
-	loaded := m.sprintLoaded[m.currentTab]
-	total := m.sprintCounts[m.currentTab]
-	return total - loaded
+	if m.currentMode == sprintMode {
+		loaded := m.sprintLoaded[m.currentTab]
+		total := m.sprintCounts[m.currentTab]
+		return total - loaded
+	} else if m.currentMode == backlogMode {
+		loaded := m.backlogLoaded[m.currentBacklogTab]
+		total := m.backlogCounts[m.currentBacklogTab]
+		return total - loaded
+	}
+	return 0
 }
 
 // getParentTask finds and returns the parent task if it exists
@@ -1102,10 +1314,11 @@ func (m model) getParentTask(task *WorkItem) *WorkItem {
 		return nil
 	}
 
-	// Search through all tasks to find the parent
-	for i := range m.tasks {
-		if m.tasks[i].ID == *task.ParentID {
-			return &m.tasks[i]
+	// Search through current tasks list to find the parent
+	currentTasks := m.getCurrentTasks()
+	for i := range currentTasks {
+		if currentTasks[i].ID == *task.ParentID {
+			return &currentTasks[i]
 		}
 	}
 
@@ -1331,20 +1544,88 @@ func (m model) getStateCategory(state string) string {
 	return "InProgress"
 }
 
-func (m model) getVisibleTasksCount() int {
-	// Get count of visible tasks in current sprint
-	sprint := m.sprints[m.currentTab]
-	if sprint == nil || sprint.Path == "" {
-		return len(m.tasks)
+// getCurrentSprintPath returns the current sprint path if available
+func (m model) getCurrentSprintPath() string {
+	if sprint := m.sprints[currentSprint]; sprint != nil {
+		return sprint.Path
 	}
+	return ""
+}
 
-	count := 0
-	for _, task := range m.tasks {
-		if task.IterationPath == sprint.Path {
-			count++
+// getTabHint returns a descriptive hint for the current tab
+func (m model) getTabHint() string {
+	if m.currentMode == sprintMode {
+		sprint := m.sprints[m.currentTab]
+		if sprint != nil && sprint.StartDate != "" && sprint.EndDate != "" {
+			return fmt.Sprintf("Sprint: %s to %s", sprint.StartDate, sprint.EndDate)
+		}
+		return ""
+	} else {
+		// Backlog mode hints
+		switch m.currentBacklogTab {
+		case recentBacklog:
+			return "Items not in any sprint, created or updated in the last 30 days"
+		case abandonedWork:
+			return "Items not updated in the last 14 days (excluding current sprint)"
+		default:
+			return ""
 		}
 	}
-	return count
+}
+
+// getCurrentTasks returns the task list for the current mode
+func (m model) getCurrentTasks() []WorkItem {
+	if m.currentMode == sprintMode {
+		return m.sprintTasks
+	}
+	// Return tasks for current backlog tab
+	if tasks, ok := m.backlogTasks[m.currentBacklogTab]; ok {
+		return tasks
+	}
+	return []WorkItem{}
+}
+
+// setCurrentTasks sets the task list for the current mode
+func (m *model) setCurrentTasks(tasks []WorkItem) {
+	if m.currentMode == sprintMode {
+		m.sprintTasks = tasks
+	} else {
+		m.backlogTasks[m.currentBacklogTab] = tasks
+	}
+}
+
+// appendCurrentTasks appends to the task list for the current mode
+func (m *model) appendCurrentTasks(tasks []WorkItem) {
+	if m.currentMode == sprintMode {
+		m.sprintTasks = append(m.sprintTasks, tasks...)
+	} else {
+		existing := m.backlogTasks[m.currentBacklogTab]
+		m.backlogTasks[m.currentBacklogTab] = append(existing, tasks...)
+	}
+}
+
+func (m model) getVisibleTasksCount() int {
+	// Get count of visible tasks based on current mode
+	if m.currentMode == sprintMode {
+		sprint := m.sprints[m.currentTab]
+		if sprint == nil || sprint.Path == "" {
+			return len(m.sprintTasks)
+		}
+
+		count := 0
+		for _, task := range m.sprintTasks {
+			if task.IterationPath == sprint.Path {
+				count++
+			}
+		}
+		return count
+	} else {
+		// Return count for current backlog tab
+		if tasks, ok := m.backlogTasks[m.currentBacklogTab]; ok {
+			return len(tasks)
+		}
+		return 0
+	}
 }
 
 // renderLogLine renders the action log line if there is one
@@ -1482,7 +1763,19 @@ func (m model) renderListView() string {
 		Foreground(lipgloss.Color("241")). // Very dim
 		Italic(true)
 
-	// Tab styles
+	// Mode and tab styles
+	activeModeStyle := lipgloss.NewStyle().
+		Bold(true).
+		Foreground(lipgloss.Color("230")).
+		Background(lipgloss.Color("62")).
+		Padding(0, 2).
+		MarginRight(1)
+
+	inactiveModeStyle := lipgloss.NewStyle().
+		Foreground(lipgloss.Color("241")).
+		Padding(0, 2).
+		MarginRight(1)
+
 	activeTabStyle := lipgloss.NewStyle().
 		Bold(true).
 		Foreground(lipgloss.Color("230")).
@@ -1493,40 +1786,74 @@ func (m model) renderListView() string {
 		Foreground(lipgloss.Color("241")).
 		Padding(0, 2)
 
-	// Render tabs
+	// Render mode selector
+	modes := []string{}
+	if m.currentMode == sprintMode {
+		modes = append(modes, activeModeStyle.Render("[1] Sprint"))
+		modes = append(modes, inactiveModeStyle.Render("[2] Backlog"))
+	} else {
+		modes = append(modes, inactiveModeStyle.Render("[1] Sprint"))
+		modes = append(modes, activeModeStyle.Render("[2] Backlog"))
+	}
+	content.WriteString(lipgloss.JoinHorizontal(lipgloss.Top, modes...) + "\n\n")
+
+	// Render tabs based on current mode
 	tabs := []string{}
 
-	prevLabel := "Previous Sprint"
-	if sprint := m.sprints[previousSprint]; sprint != nil {
-		prevLabel = sprint.Name
-	}
-	if m.currentTab == previousSprint {
-		tabs = append(tabs, activeTabStyle.Render(prevLabel))
-	} else {
-		tabs = append(tabs, inactiveTabStyle.Render(prevLabel))
-	}
+	if m.currentMode == sprintMode {
+		prevLabel := "Previous Sprint"
+		if sprint := m.sprints[previousSprint]; sprint != nil {
+			prevLabel = sprint.Name
+		}
+		if m.currentTab == previousSprint {
+			tabs = append(tabs, activeTabStyle.Render(prevLabel))
+		} else {
+			tabs = append(tabs, inactiveTabStyle.Render(prevLabel))
+		}
 
-	currLabel := "Current Sprint"
-	if sprint := m.sprints[currentSprint]; sprint != nil {
-		currLabel = sprint.Name
-	}
-	if m.currentTab == currentSprint {
-		tabs = append(tabs, activeTabStyle.Render(currLabel))
-	} else {
-		tabs = append(tabs, inactiveTabStyle.Render(currLabel))
-	}
+		currLabel := "Current Sprint"
+		if sprint := m.sprints[currentSprint]; sprint != nil {
+			currLabel = sprint.Name
+		}
+		if m.currentTab == currentSprint {
+			tabs = append(tabs, activeTabStyle.Render(currLabel))
+		} else {
+			tabs = append(tabs, inactiveTabStyle.Render(currLabel))
+		}
 
-	nextLabel := "Next Sprint"
-	if sprint := m.sprints[nextSprint]; sprint != nil {
-		nextLabel = sprint.Name
-	}
-	if m.currentTab == nextSprint {
-		tabs = append(tabs, activeTabStyle.Render(nextLabel))
-	} else {
-		tabs = append(tabs, inactiveTabStyle.Render(nextLabel))
+		nextLabel := "Next Sprint"
+		if sprint := m.sprints[nextSprint]; sprint != nil {
+			nextLabel = sprint.Name
+		}
+		if m.currentTab == nextSprint {
+			tabs = append(tabs, activeTabStyle.Render(nextLabel))
+		} else {
+			tabs = append(tabs, inactiveTabStyle.Render(nextLabel))
+		}
+	} else if m.currentMode == backlogMode {
+		// Backlog mode tabs
+		if m.currentBacklogTab == recentBacklog {
+			tabs = append(tabs, activeTabStyle.Render("Recent Backlog"))
+		} else {
+			tabs = append(tabs, inactiveTabStyle.Render("Recent Backlog"))
+		}
+
+		if m.currentBacklogTab == abandonedWork {
+			tabs = append(tabs, activeTabStyle.Render("Abandoned Work"))
+		} else {
+			tabs = append(tabs, inactiveTabStyle.Render("Abandoned Work"))
+		}
 	}
 
 	content.WriteString(lipgloss.JoinHorizontal(lipgloss.Top, tabs...) + "\n\n")
+
+	// Show tab hint
+	if hint := m.getTabHint(); hint != "" {
+		hintStyle := lipgloss.NewStyle().
+			Foreground(lipgloss.Color("241")).
+			Italic(true)
+		content.WriteString(hintStyle.Render(hint) + "\n\n")
+	}
 
 	if m.statusMessage != "" {
 		msgStyle := lipgloss.NewStyle().Foreground(lipgloss.Color("86"))
@@ -1703,7 +2030,7 @@ func (m model) renderListView() string {
 	}
 
 	// Footer with keybindings
-	keybindings := "tab: cycle tabs • →/l: details • ↑/↓ or j/k: navigate\nenter: details • o: open in browser • /: filter • f: find • r: refresh • ?: help • q: quit"
+	keybindings := "1/2: switch mode • tab: cycle tabs • →/l: details • ↑/↓ or j/k: navigate\nenter: details • o: open in browser • /: filter • f: find • r: refresh • ?: help • q: quit"
 	content.WriteString(m.renderFooter(keybindings))
 
 	return content.String()
@@ -1805,10 +2132,11 @@ func (m model) renderFilterView() string {
 	resultCount := len(treeItems)
 
 	// Show result count
+	currentTasks := m.getCurrentTasks()
 	if m.filterInput.Value() != "" {
-		content.WriteString(dimStyle.Render(fmt.Sprintf("  %d/%d", resultCount, len(m.tasks))) + "\n\n")
+		content.WriteString(dimStyle.Render(fmt.Sprintf("  %d/%d", resultCount, len(currentTasks))) + "\n\n")
 	} else {
-		content.WriteString(dimStyle.Render(fmt.Sprintf("  %d items", len(m.tasks))) + "\n\n")
+		content.WriteString(dimStyle.Render(fmt.Sprintf("  %d items", len(currentTasks))) + "\n\n")
 	}
 
 	// Display results (limit to 15 visible items for performance)
@@ -1993,12 +2321,14 @@ func (m model) renderHelpView() string {
 	content.WriteString(sectionStyle.Render("Global") + "\n")
 	content.WriteString(keyStyle.Render("?") + descStyle.Render("Show/hide this help") + "\n")
 	content.WriteString(keyStyle.Render("q, ctrl+c") + descStyle.Render("Quit application") + "\n")
+	content.WriteString(keyStyle.Render("1") + descStyle.Render("Switch to Sprint Mode") + "\n")
+	content.WriteString(keyStyle.Render("2") + descStyle.Render("Switch to Backlog Mode") + "\n")
 	content.WriteString(keyStyle.Render("r") + descStyle.Render("Refresh (all data in list, single item in detail)") + "\n")
 	content.WriteString(keyStyle.Render("o") + descStyle.Render("Open current item in browser") + "\n\n")
 
 	// List view keybindings
 	content.WriteString(sectionStyle.Render("List View") + "\n")
-	content.WriteString(keyStyle.Render("tab") + descStyle.Render("Cycle through sprint tabs") + "\n")
+	content.WriteString(keyStyle.Render("tab") + descStyle.Render("Cycle through tabs (sprint or backlog)") + "\n")
 	content.WriteString(keyStyle.Render("↑/↓, j/k") + descStyle.Render("Navigate up/down") + "\n")
 	content.WriteString(keyStyle.Render("→/l, enter") + descStyle.Render("Open item details") + "\n")
 	content.WriteString(keyStyle.Render("/") + descStyle.Render("Filter items in current list") + "\n")
