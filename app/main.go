@@ -1115,8 +1115,8 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 					}
 					// Load sprint data if not attempted yet
 					currentList := m.getCurrentList()
-					if currentList != nil && !currentList.attempted && m.sprints[m.currentTab] != nil && m.client != nil {
-						sprint := m.sprints[m.currentTab]
+					sprint := m.sprints[m.currentTab]
+					if currentList != nil && !currentList.attempted && sprint != nil && m.client != nil {
 						m.loading = true
 						tab := m.currentTab
 						return m, tea.Batch(loadTasksForSprint(m.client, nil, sprint.Path, defaultLoadLimit, &tab), m.spinner.Tick)
@@ -1259,7 +1259,34 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 	case tasksLoadedMsg:
 		if msg.err != nil {
-			m.err = msg.err
+			// Add context to error message based on which tab failed
+			var errorContext string
+			if msg.forTab != nil {
+				tabNames := map[sprintTab]string{
+					previousSprint: "previous sprint",
+					currentSprint:  "current sprint",
+					nextSprint:     "next sprint",
+				}
+				if tabName, ok := tabNames[*msg.forTab]; ok {
+					errorContext = fmt.Sprintf(" (%s)", tabName)
+				}
+			} else if msg.forBacklogTab != nil {
+				tabNames := map[backlogTab]string{
+					recentBacklog: "recent backlog",
+					abandonedWork: "abandoned work",
+				}
+				if tabName, ok := tabNames[*msg.forBacklogTab]; ok {
+					errorContext = fmt.Sprintf(" (%s)", tabName)
+				}
+			}
+
+			// Wrap error with context if available
+			if errorContext != "" {
+				m.err = fmt.Errorf("failed to load%s: %w", errorContext, msg.err)
+			} else {
+				m.err = msg.err
+			}
+
 			m.statusMessage = ""
 			m.loadingMore = false
 			// If this was part of initial loading, decrement counter
