@@ -317,11 +317,6 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 							m.selectedTaskID = m.selectedTask.ID
 							m.state = detailView
 							m.searchActive = true
-							// Reset viewport and set content when entering detail view
-							if m.viewportReady {
-								m.viewport.GotoTop()
-								m.viewport.SetContent(m.buildDetailContent())
-							}
 						}
 					}
 				} else {
@@ -491,11 +486,6 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 					m.selectedTask = treeItems[m.cursor].WorkItem
 					m.selectedTaskID = m.selectedTask.ID
 					m.state = detailView
-					// Reset viewport and set content when entering detail view
-					if m.viewportReady {
-						m.viewport.GotoTop()
-						m.viewport.SetContent(m.buildDetailContent())
-					}
 				}
 			case "tab":
 				// Cycle through tabs
@@ -553,11 +543,6 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 					m.selectedTask = treeItems[m.cursor].WorkItem
 					m.selectedTaskID = m.selectedTask.ID
 					m.state = detailView
-					// Reset viewport and set content when entering detail view
-					if m.viewportReady {
-						m.viewport.GotoTop()
-						m.viewport.SetContent(m.buildDetailContent())
-					}
 				}
 			}
 		}
@@ -567,18 +552,6 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			switch msg.String() {
 			case "esc", "backspace", "left", "h":
 				m.state = listView
-			case "up", "k":
-				m.viewport.LineUp(1)
-			case "down", "j":
-				m.viewport.LineDown(1)
-			case "pgup", "b":
-				m.viewport.ViewUp()
-			case "pgdown", "f", " ":
-				m.viewport.ViewDown()
-			case "home", "g":
-				m.viewport.GotoTop()
-			case "end", "G":
-				m.viewport.GotoBottom()
 			}
 		}
 
@@ -921,15 +894,83 @@ func (m model) getRemainingCount() int {
 	return total - loaded
 }
 
-// buildDetailContent creates the content string for the detail viewport
+// getParentTask finds and returns the parent task if it exists
+func (m model) getParentTask(task *WorkItem) *WorkItem {
+	if task == nil || task.ParentID == nil {
+		return nil
+	}
+
+	// Search through all tasks to find the parent
+	for i := range m.tasks {
+		if m.tasks[i].ID == *task.ParentID {
+			return &m.tasks[i]
+		}
+	}
+
+	return nil
+}
+
+// getRelativeTime returns a human-readable relative time string
+func getRelativeTime(dateStr string) string {
+	if dateStr == "" {
+		return ""
+	}
+
+	// Parse the date string (format: 2006-01-02T15:04:05)
+	t, err := time.Parse("2006-01-02T15:04:05", dateStr)
+	if err != nil {
+		// Try without the time part
+		t, err = time.Parse("2006-01-02", dateStr[:10])
+		if err != nil {
+			return ""
+		}
+	}
+
+	duration := time.Since(t)
+	days := int(duration.Hours() / 24)
+	weeks := days / 7
+
+	if days < 1 {
+		return "(< day ago)"
+	} else if days == 1 {
+		return "(1 day ago)"
+	} else if weeks == 0 {
+		return fmt.Sprintf("(%d days ago)", days)
+	} else if weeks == 1 {
+		return "(1 week ago)"
+	} else if weeks <= 10 {
+		return fmt.Sprintf("(%d weeks ago)", weeks)
+	} else {
+		return "(10+ weeks ago)"
+	}
+}
+
+// buildDetailContent creates the content string for the detail view
 func (m model) buildDetailContent() string {
 	if m.selectedTask == nil {
 		return ""
 	}
 
-	titleStyle := lipgloss.NewStyle().
+	task := m.selectedTask
+
+	// Styles
+	cardStyle := lipgloss.NewStyle().
+		BorderStyle(lipgloss.RoundedBorder()).
+		BorderForeground(lipgloss.Color("62")).
+		Padding(1, 2).
+		Width(m.width - 4)
+
+	headerStyle := lipgloss.NewStyle().
 		Bold(true).
-		Foreground(lipgloss.Color("39"))
+		Foreground(lipgloss.Color("39")).
+		MarginBottom(1)
+
+	labelStyle := lipgloss.NewStyle().
+		Foreground(lipgloss.Color("241")).
+		Width(15)
+
+	valueStyle := lipgloss.NewStyle().
+		Foreground(lipgloss.Color("230"))
 
 	sectionStyle := lipgloss.NewStyle().
 		Bold(true).
@@ -937,70 +978,101 @@ func (m model) buildDetailContent() string {
 		MarginTop(1).
 		MarginBottom(1)
 
-	labelStyle := lipgloss.NewStyle().
-		Bold(true).
-		Foreground(lipgloss.Color("212"))
+	descriptionStyle := lipgloss.NewStyle().
+		Foreground(lipgloss.Color("248")).
+		Italic(true).
+		MarginTop(1).
+		MarginBottom(1)
 
-	valueStyle := lipgloss.NewStyle().
-		Foreground(lipgloss.Color("230"))
+	// Build the card content
+	var cardContent strings.Builder
 
-	boxStyle := lipgloss.NewStyle().
-		BorderStyle(lipgloss.RoundedBorder()).
-		BorderForeground(lipgloss.Color("62")).
-		Padding(1, 2)
+	// Header with ID and Title
+	cardContent.WriteString(headerStyle.Render(fmt.Sprintf("#%d - %s", task.ID, task.Title)))
+	cardContent.WriteString("\n\n")
 
-	task := m.selectedTask
-
-	// Build the content string
-	var content strings.Builder
-
-	// Header
-	content.WriteString(titleStyle.Render(fmt.Sprintf("Work Item #%d", task.ID)))
-	content.WriteString("\n\n")
+	// Parent info if exists
+	if parent := m.getParentTask(task); parent != nil {
+		cardContent.WriteString(labelStyle.Render("Parent:"))
+		cardContent.WriteString(valueStyle.Render(fmt.Sprintf("#%d - %s", parent.ID, parent.Title)))
+		cardContent.WriteString("\n")
+	}
 
 	// Basic Info
-	content.WriteString(labelStyle.Render("Title: ") + valueStyle.Render(task.Title) + "\n")
-	content.WriteString(labelStyle.Render("Type: ") + valueStyle.Render(task.WorkItemType) + "\n")
-	content.WriteString(labelStyle.Render("State: ") + valueStyle.Render(task.State) + "\n")
+	cardContent.WriteString(labelStyle.Render("Type:"))
+	cardContent.WriteString(valueStyle.Render(task.WorkItemType))
+	cardContent.WriteString("\n")
+
+	cardContent.WriteString(labelStyle.Render("State:"))
+	cardContent.WriteString(valueStyle.Render(task.State))
+	cardContent.WriteString("\n")
+
 	if task.AssignedTo != "" {
-		content.WriteString(labelStyle.Render("Assigned To: ") + valueStyle.Render(task.AssignedTo) + "\n")
+		cardContent.WriteString(labelStyle.Render("Assigned To:"))
+		cardContent.WriteString(valueStyle.Render(task.AssignedTo))
+		cardContent.WriteString("\n")
 	}
 
 	if task.Priority > 0 {
-		content.WriteString(labelStyle.Render("Priority: ") + valueStyle.Render(fmt.Sprintf("%d", task.Priority)) + "\n")
+		cardContent.WriteString(labelStyle.Render("Priority:"))
+		cardContent.WriteString(valueStyle.Render(fmt.Sprintf("%d", task.Priority)))
+		cardContent.WriteString("\n")
 	}
 
 	if task.Tags != "" {
-		content.WriteString(labelStyle.Render("Tags: ") + valueStyle.Render(task.Tags) + "\n")
+		cardContent.WriteString(labelStyle.Render("Tags:"))
+		cardContent.WriteString(valueStyle.Render(task.Tags))
+		cardContent.WriteString("\n")
+	}
+
+	if task.IterationPath != "" {
+		cardContent.WriteString(labelStyle.Render("Sprint:"))
+		// Extract just the sprint name from the path
+		parts := strings.Split(task.IterationPath, "\\")
+		sprintName := parts[len(parts)-1]
+		cardContent.WriteString(valueStyle.Render(sprintName))
+		cardContent.WriteString("\n")
 	}
 
 	if task.CreatedDate != "" {
-		content.WriteString(labelStyle.Render("Created: ") + valueStyle.Render(task.CreatedDate) + "\n")
+		relativeTime := getRelativeTime(task.CreatedDate)
+		dateValue := task.CreatedDate
+		if relativeTime != "" {
+			dateValue = fmt.Sprintf("%s %s", task.CreatedDate, relativeTime)
+		}
+		cardContent.WriteString(labelStyle.Render("Created:"))
+		cardContent.WriteString(valueStyle.Render(dateValue))
+		cardContent.WriteString("\n")
 	}
 
 	if task.ChangedDate != "" {
-		content.WriteString(labelStyle.Render("Last Updated: ") + valueStyle.Render(task.ChangedDate) + "\n")
+		relativeTime := getRelativeTime(task.ChangedDate)
+		dateValue := task.ChangedDate
+		if relativeTime != "" {
+			dateValue = fmt.Sprintf("%s %s", task.ChangedDate, relativeTime)
+		}
+		cardContent.WriteString(labelStyle.Render("Last Updated:"))
+		cardContent.WriteString(valueStyle.Render(dateValue))
+		cardContent.WriteString("\n")
 	}
 
 	// Description Section
 	if task.Description != "" {
-		content.WriteString("\n")
-		content.WriteString(sectionStyle.Render("Description"))
-		content.WriteString("\n")
-		content.WriteString(boxStyle.Render(task.Description))
-		content.WriteString("\n")
+		cardContent.WriteString("\n")
+		cardContent.WriteString(sectionStyle.Render("Description"))
+		cardContent.WriteString("\n")
+		cardContent.WriteString(descriptionStyle.Render(task.Description))
 	}
 
 	// Comments / Discussion Section
 	if task.Comments != "" {
-		content.WriteString("\n")
-		content.WriteString(sectionStyle.Render("Comments / Discussion"))
-		content.WriteString("\n")
-		content.WriteString(boxStyle.Render(task.Comments))
-		content.WriteString("\n")
+		cardContent.WriteString("\n")
+		cardContent.WriteString(sectionStyle.Render("Comments / Discussion"))
+		cardContent.WriteString("\n")
+		cardContent.WriteString(descriptionStyle.Render(task.Comments))
 	}
 
-	return content.String()
+	return cardStyle.Render(cardContent.String())
 }
 
 // min returns the minimum of two integers
@@ -1071,6 +1143,52 @@ func (m *model) setActionLog(message string) {
 	m.lastActionTime = time.Now()
 }
 
+// renderTitleBar renders the title bar with the given title text
+func (m model) renderTitleBar(title string) string {
+	titleBarStyle := lipgloss.NewStyle().
+		Background(lipgloss.Color("62")).
+		Foreground(lipgloss.Color("230")).
+		Bold(true).
+		Width(m.width).
+		Padding(0, 1)
+
+	// Calculate padding to align version to the right
+	versionText := version
+	availableWidth := m.width - len(title) - len(versionText) - 4 // 4 for padding (2 on each side)
+	if availableWidth < 0 {
+		availableWidth = 0
+	}
+	padding := strings.Repeat(" ", availableWidth)
+
+	titleWithVersion := title + padding + versionText
+	return titleBarStyle.Render(titleWithVersion) + "\n\n"
+}
+
+// renderFooter renders the bottom section with action log and keybindings
+func (m model) renderFooter(keybindings string) string {
+	var footer strings.Builder
+
+	// Action log line
+	footer.WriteString("\n")
+	if m.lastActionLog != "" {
+		footer.WriteString(m.renderLogLine() + "\n")
+	}
+
+	// Separator line
+	separatorStyle := lipgloss.NewStyle().
+		Foreground(lipgloss.Color("241")).
+		Width(m.width)
+	separator := separatorStyle.Render(strings.Repeat("─", m.width))
+
+	helpStyle := lipgloss.NewStyle().
+		Foreground(lipgloss.Color("241"))
+
+	footer.WriteString(separator + "\n")
+	footer.WriteString(helpStyle.Render(keybindings))
+
+	return footer.String()
+}
+
 func (m model) View() string {
 	if m.loading {
 		return fmt.Sprintf("\n  %s %s\n\n", m.spinner.View(), m.statusMessage)
@@ -1095,13 +1213,14 @@ func (m model) View() string {
 }
 
 func (m model) renderListView() string {
-	// Title bar style - full width background
-	titleBarStyle := lipgloss.NewStyle().
-		Background(lipgloss.Color("62")).
-		Foreground(lipgloss.Color("230")).
-		Bold(true).
-		Width(m.width).
-		Padding(0, 1)
+	var content strings.Builder
+
+	// Title bar
+	title := "Azure DevOps - Work Items"
+	if m.searchActive {
+		title += fmt.Sprintf(" (filtered: %d results)", len(m.filteredTasks))
+	}
+	content.WriteString(m.renderTitleBar(title))
 
 	selectedStyle := lipgloss.NewStyle().
 		Background(lipgloss.Color("62")).
@@ -1134,23 +1253,6 @@ func (m model) renderListView() string {
 	inactiveTabStyle := lipgloss.NewStyle().
 		Foreground(lipgloss.Color("241")).
 		Padding(0, 2)
-
-	// Title bar
-	title := "Azure DevOps - Work Items"
-	if m.searchActive {
-		title += fmt.Sprintf(" (filtered: %d results)", len(m.filteredTasks))
-	}
-
-	// Calculate padding to align version to the right
-	versionText := version
-	availableWidth := m.width - len(title) - len(versionText) - 4 // 4 for padding (2 on each side)
-	if availableWidth < 0 {
-		availableWidth = 0
-	}
-	padding := strings.Repeat(" ", availableWidth)
-
-	titleWithVersion := title + padding + versionText
-	s := titleBarStyle.Render(titleWithVersion) + "\n\n"
 
 	// Render tabs
 	tabs := []string{}
@@ -1185,16 +1287,16 @@ func (m model) renderListView() string {
 		tabs = append(tabs, inactiveTabStyle.Render(nextLabel))
 	}
 
-	s += lipgloss.JoinHorizontal(lipgloss.Top, tabs...) + "\n\n"
+	content.WriteString(lipgloss.JoinHorizontal(lipgloss.Top, tabs...) + "\n\n")
 
 	if m.statusMessage != "" {
 		msgStyle := lipgloss.NewStyle().Foreground(lipgloss.Color("86"))
-		s += msgStyle.Render(m.statusMessage) + "\n\n"
+		content.WriteString(msgStyle.Render(m.statusMessage) + "\n\n")
 	}
 
 	treeItems := m.getVisibleTreeItems()
 	if len(treeItems) == 0 {
-		s += "  No tasks found.\n"
+		content.WriteString("  No tasks found.\n")
 	}
 
 	// Style for tree edges with more vibrant color
@@ -1278,7 +1380,7 @@ func (m model) renderListView() string {
 		}
 
 		// Apply the styling
-		title := itemTitleStyle.Render(treeItem.WorkItem.Title)
+		taskTitle := itemTitleStyle.Render(treeItem.WorkItem.Title)
 		state := stateStyle.Render(treeItem.WorkItem.State)
 
 		// Build the line with icon
@@ -1293,18 +1395,18 @@ func (m model) renderListView() string {
 				treePrefix,
 				styledIcon,
 				spacer,
-				title,
+				taskTitle,
 				spacer+state)
 		} else {
 			line = fmt.Sprintf("%s %s%s %s %s",
 				cursor,
 				treePrefix,
 				styledIcon,
-				title,
+				taskTitle,
 				state)
 		}
 
-		s += line + "\n"
+		content.WriteString(line + "\n")
 	}
 
 	// Add "Load More" or "Load All" item if there are more items
@@ -1333,27 +1435,14 @@ func (m model) renderListView() string {
 			loadMoreText = loadMoreStyle.Render(loadMoreText)
 		}
 
-		s += loadMoreText + "\n"
+		content.WriteString(loadMoreText + "\n")
 	}
 
-	// Action log line
-	s += "\n"
-	if m.lastActionLog != "" {
-		s += m.renderLogLine() + "\n"
-	}
+	// Footer with keybindings
+	keybindings := "tab: cycle tabs • →/l: details • ↑/↓ or j/k: navigate\nenter: details • o: open in browser • /: search • f: filter • r: refresh • q: quit"
+	content.WriteString(m.renderFooter(keybindings))
 
-	// Separator line
-	separatorStyle := lipgloss.NewStyle().
-		Foreground(lipgloss.Color("241")).
-		Width(m.width)
-	separator := separatorStyle.Render(strings.Repeat("─", m.width))
-
-	helpStyle := lipgloss.NewStyle().
-		Foreground(lipgloss.Color("241"))
-
-	s += separator + "\n" + helpStyle.Render("tab: cycle tabs • →/l: details • ↑/↓ or j/k: navigate\nenter: details • o: open in browser • /: search • f: filter • r: refresh • q: quit")
-
-	return s
+	return content.String()
 }
 
 func (m model) renderDetailView() string {
@@ -1361,86 +1450,37 @@ func (m model) renderDetailView() string {
 		return "No task selected"
 	}
 
-	// If viewport isn't ready or content needs updating, build and set it
-	if !m.viewportReady || m.selectedTaskID != m.selectedTask.ID {
-		// Content will be set when entering detail view in Update()
-		return "Loading..."
-	}
+	var content strings.Builder
 
-	// Title bar style - full width
-	titleBarStyle := lipgloss.NewStyle().
-		Background(lipgloss.Color("62")).
-		Foreground(lipgloss.Color("230")).
-		Bold(true).
-		Width(m.width).
-		Padding(0, 1)
+	// Title bar
+	titleText := fmt.Sprintf("Work Item Details")
+	content.WriteString(m.renderTitleBar(titleText))
 
-	titleText := fmt.Sprintf("Work Item #%d - %s", m.selectedTask.ID, m.selectedTask.Title)
+	// Render the card
+	content.WriteString(m.buildDetailContent())
+	content.WriteString("\n")
 
-	// Calculate padding to align version to the right
-	versionText := version
-	availableWidth := m.width - len(titleText) - len(versionText) - 4 // 4 for padding (2 on each side)
-	if availableWidth < 0 {
-		availableWidth = 0
-	}
-	padding := strings.Repeat(" ", availableWidth)
+	// Footer with keybindings
+	keybindings := "←/h/esc: back • o: open in browser • s: change state • q: quit"
+	content.WriteString(m.renderFooter(keybindings))
 
-	titleWithVersion := titleText + padding + versionText
-	titleBar := titleBarStyle.Render(titleWithVersion)
-
-	// Help footer
-	helpStyle := lipgloss.NewStyle().
-		Foreground(lipgloss.Color("241")).
-		Faint(true)
-
-	help := helpStyle.Render("↑/↓ j/k: scroll • pgup/pgdn: page • home/end: top/bottom • ←/h: back • o: open • s: change state • q: quit")
-
-	// Render the viewport with scrollbar info
-	scrollInfo := helpStyle.Render(fmt.Sprintf(" %3.f%%", m.viewport.ScrollPercent()*100))
-
-	// Action log line
-	logLine := ""
-	if m.lastActionLog != "" {
-		logLine = m.renderLogLine() + "\n"
-	}
-
-	// Separator line
-	separatorStyle := lipgloss.NewStyle().
-		Foreground(lipgloss.Color("241")).
-		Width(m.width)
-	separator := separatorStyle.Render(strings.Repeat("─", m.width))
-
-	return fmt.Sprintf("%s\n\n%s\n%s\n%s%s\n%s", titleBar, m.viewport.View(), scrollInfo, logLine, separator, help)
+	return content.String()
 }
 
 func (m model) renderStatePickerView() string {
-	titleBarStyle := lipgloss.NewStyle().
-		Background(lipgloss.Color("62")).
-		Foreground(lipgloss.Color("230")).
-		Bold(true).
-		Width(m.width).
-		Padding(0, 1)
+	var content strings.Builder
+
+	// Title bar
+	titleText := "Select New State"
+	content.WriteString(m.renderTitleBar(titleText))
 
 	selectedStyle := lipgloss.NewStyle().
 		Background(lipgloss.Color("62")).
 		Foreground(lipgloss.Color("230")).
 		Bold(true)
 
-	titleText := "Select New State"
-
-	// Calculate padding to align version to the right
-	versionText := version
-	availableWidth := m.width - len(titleText) - len(versionText) - 4 // 4 for padding (2 on each side)
-	if availableWidth < 0 {
-		availableWidth = 0
-	}
-	padding := strings.Repeat(" ", availableWidth)
-
-	titleWithVersion := titleText + padding + versionText
-	s := titleBarStyle.Render(titleWithVersion) + "\n\n"
-
 	if m.selectedTask != nil {
-		s += fmt.Sprintf("Current state: %s\n\n", m.selectedTask.State)
+		content.WriteString(fmt.Sprintf("Current state: %s\n\n", m.selectedTask.State))
 	}
 
 	for i, state := range m.availableStates {
@@ -1455,37 +1495,23 @@ func (m model) renderStatePickerView() string {
 			line = selectedStyle.Render(line)
 		}
 
-		s += line + "\n"
+		content.WriteString(line + "\n")
 	}
 
-	// Action log line
-	if m.lastActionLog != "" {
-		s += "\n" + m.renderLogLine() + "\n"
-	} else {
-		s += "\n"
-	}
+	// Footer with keybindings
+	keybindings := "↑/↓ or j/k: navigate • enter: select • esc: cancel"
+	content.WriteString(m.renderFooter(keybindings))
 
-	// Separator line
-	separatorStyle := lipgloss.NewStyle().
-		Foreground(lipgloss.Color("241")).
-		Width(m.width)
-	separator := separatorStyle.Render(strings.Repeat("─", m.width))
-
-	helpStyle := lipgloss.NewStyle().
-		Foreground(lipgloss.Color("241"))
-
-	s += separator + "\n" + helpStyle.Render("↑/↓ or j/k: navigate • enter: select • esc: cancel")
-
-	return s
+	return content.String()
 }
 
 func (m model) renderSearchView() string {
-	titleBarStyle := lipgloss.NewStyle().
-		Background(lipgloss.Color("62")).
-		Foreground(lipgloss.Color("230")).
-		Bold(true).
-		Width(m.width).
-		Padding(0, 1)
+	var content strings.Builder
+
+	// Title bar
+	titleText := "Search"
+	content.WriteString(m.renderTitleBar(titleText))
+	content.WriteString(m.searchInput.View() + "\n\n")
 
 	selectedStyle := lipgloss.NewStyle().
 		Background(lipgloss.Color("62")).
@@ -1511,29 +1537,14 @@ func (m model) renderSearchView() string {
 		Foreground(lipgloss.Color("241")).
 		Italic(true)
 
-	// Title bar with search prompt
-	titleText := "Search"
-
-	// Calculate padding to align version to the right
-	versionText := version
-	availableWidth := m.width - len(titleText) - len(versionText) - 4 // 4 for padding (2 on each side)
-	if availableWidth < 0 {
-		availableWidth = 0
-	}
-	padding := strings.Repeat(" ", availableWidth)
-
-	titleWithVersion := titleText + padding + versionText
-	s := titleBarStyle.Render(titleWithVersion) + "\n\n"
-	s += m.searchInput.View() + "\n\n"
-
 	treeItems := m.getVisibleTreeItems()
 	resultCount := len(treeItems)
 
 	// Show result count
 	if m.searchInput.Value() != "" {
-		s += dimStyle.Render(fmt.Sprintf("  %d/%d", resultCount, len(m.tasks))) + "\n\n"
+		content.WriteString(dimStyle.Render(fmt.Sprintf("  %d/%d", resultCount, len(m.tasks))) + "\n\n")
 	} else {
-		s += dimStyle.Render(fmt.Sprintf("  %d items", len(m.tasks))) + "\n\n"
+		content.WriteString(dimStyle.Render(fmt.Sprintf("  %d items", len(m.tasks))) + "\n\n")
 	}
 
 	// Display results (limit to 15 visible items for performance)
@@ -1629,7 +1640,7 @@ func (m model) renderSearchView() string {
 		}
 
 		// Apply the styling
-		title := itemTitleStyle.Render(treeItem.WorkItem.Title)
+		taskTitle := itemTitleStyle.Render(treeItem.WorkItem.Title)
 		state := stateStyle.Render(treeItem.WorkItem.State)
 
 		// Build the line with icon
@@ -1643,92 +1654,50 @@ func (m model) renderSearchView() string {
 				treePrefix,
 				styledIcon,
 				spacer,
-				title,
+				taskTitle,
 				spacer+state)
 		} else {
 			line = fmt.Sprintf("%s%s%s %s %s",
 				cursor,
 				treePrefix,
 				styledIcon,
-				title,
+				taskTitle,
 				state)
 		}
 
-		s += line + "\n"
+		content.WriteString(line + "\n")
 	}
 
 	// Show scroll indicator if there are more items
 	if resultCount > maxVisible {
 		if endIdx < resultCount {
-			s += dimStyle.Render(fmt.Sprintf("  ... %d more ...", resultCount-endIdx)) + "\n"
+			content.WriteString(dimStyle.Render(fmt.Sprintf("  ... %d more ...", resultCount-endIdx)) + "\n")
 		}
 	}
 
-	// Action log line
-	if m.lastActionLog != "" {
-		s += "\n" + m.renderLogLine() + "\n"
-	} else {
-		s += "\n"
-	}
+	// Footer with keybindings
+	keybindings := "↑/↓ or ctrl+j/k: navigate • ctrl+d/u: half page • enter: open detail • esc: cancel"
+	content.WriteString(m.renderFooter(keybindings))
 
-	// Separator line
-	separatorStyle := lipgloss.NewStyle().
-		Foreground(lipgloss.Color("241")).
-		Width(m.width)
-	separator := separatorStyle.Render(strings.Repeat("─", m.width))
-
-	helpStyle := lipgloss.NewStyle().
-		Foreground(lipgloss.Color("241"))
-
-	s += separator + "\n" + helpStyle.Render("↑/↓ or ctrl+j/k: navigate • ctrl+d/u: half page • enter: open detail • esc: cancel")
-
-	return s
+	return content.String()
 }
 
 func (m model) renderFilterView() string {
-	titleBarStyle := lipgloss.NewStyle().
-		Background(lipgloss.Color("62")).
-		Foreground(lipgloss.Color("230")).
-		Bold(true).
-		Width(m.width).
-		Padding(0, 1)
+	var content strings.Builder
 
+	// Title bar
 	titleText := "Filter Work Items"
+	content.WriteString(m.renderTitleBar(titleText))
+	content.WriteString(m.filterInput.View() + "\n\n")
+	content.WriteString("Examples:\n")
+	content.WriteString("  - Press Enter to query all items\n")
+	content.WriteString("  - (Custom filters coming soon)\n")
 
-	// Calculate padding to align version to the right
-	versionText := version
-	availableWidth := m.width - len(titleText) - len(versionText) - 4 // 4 for padding (2 on each side)
-	if availableWidth < 0 {
-		availableWidth = 0
-	}
-	padding := strings.Repeat(" ", availableWidth)
+	// Footer with keybindings
+	keybindings := "enter: apply filter • esc: cancel"
+	content.WriteString(m.renderFooter(keybindings))
 
-	titleWithVersion := titleText + padding + versionText
-	s := titleBarStyle.Render(titleWithVersion) + "\n\n"
-	s += m.filterInput.View() + "\n\n"
-	s += "Examples:\n"
-	s += "  - Press Enter to query all items\n"
-	s += "  - (Custom filters coming soon)\n"
-
-	// Action log line
-	if m.lastActionLog != "" {
-		s += "\n" + m.renderLogLine() + "\n"
-	} else {
-		s += "\n"
-	}
-
-	// Separator line
-	separatorStyle := lipgloss.NewStyle().
-		Foreground(lipgloss.Color("241")).
-		Width(m.width)
-	separator := separatorStyle.Render(strings.Repeat("─", m.width))
-
-	helpStyle := lipgloss.NewStyle().
-		Foreground(lipgloss.Color("241"))
-
-	s += separator + "\n" + helpStyle.Render("enter: apply filter • esc: cancel")
-
-	return s
+	return content.String()
 }
 
 func openInBrowser(orgURL, project string, workItemID int) error {
