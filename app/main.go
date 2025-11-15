@@ -67,24 +67,13 @@ type Sprint struct {
 }
 
 type model struct {
-	// WorkItemList instances - new component-based architecture
+	// WorkItemList instances - component-based architecture
 	sprintLists  map[sprintTab]*WorkItemList
 	backlogLists map[backlogTab]*WorkItemList
 
-	// Legacy fields (to be removed after migration)
-	tasks            []WorkItem
-	sprintTasks      []WorkItem                // Tasks for sprint mode only
-	backlogTasks     map[backlogTab][]WorkItem // Tasks per backlog tab
-	filteredTasks    []WorkItem
-	cursor           int
-	scrollOffset     int                 // Scroll offset for list view
-	sprintCounts     map[sprintTab]int   // Total count per sprint
-	sprintLoaded     map[sprintTab]int   // Loaded count per sprint
-	sprintAttempted  map[sprintTab]bool  // Whether we've attempted to load this sprint
-	backlogCounts    map[backlogTab]int  // Total count per backlog tab
-	backlogLoaded    map[backlogTab]int  // Loaded count per backlog tab
-	backlogAttempted map[backlogTab]bool // Whether we've attempted to load this backlog tab
-	filterActive     bool
+	// Temporary filter state for backward compatibility
+	filteredTasks []WorkItem
+	filterActive  bool
 
 	// Core UI state
 	state             viewState
@@ -114,6 +103,9 @@ type model struct {
 	initialLoading    int // Count of initial sprint loads pending
 	width             int // Terminal width
 	height            int // Terminal height
+	// Cursor and scroll are synchronized with current WorkItemList
+	cursor       int
+	scrollOffset int
 	// Edit mode fields
 	editTitleInput       textinput.Model
 	editDescriptionInput textarea.Model
@@ -207,12 +199,10 @@ func initialModel() model {
 		sprintLists:  make(map[sprintTab]*WorkItemList),
 		backlogLists: make(map[backlogTab]*WorkItemList),
 
-		// Legacy fields (to be migrated)
-		tasks:                []WorkItem{},
-		sprintTasks:          []WorkItem{},
-		backlogTasks:         make(map[backlogTab][]WorkItem),
+		// UI state fields
 		filteredTasks:        []WorkItem{},
 		cursor:               0,
+		scrollOffset:         0,
 		state:                listView,
 		loading:              true,
 		spinner:              s,
@@ -226,12 +216,6 @@ func initialModel() model {
 		currentTab:           currentSprint,
 		currentBacklogTab:    recentBacklog,
 		sprints:              make(map[sprintTab]*Sprint),
-		sprintCounts:         make(map[sprintTab]int),
-		sprintLoaded:         make(map[sprintTab]int),
-		sprintAttempted:      make(map[sprintTab]bool),
-		backlogCounts:        make(map[backlogTab]int),
-		backlogLoaded:        make(map[backlogTab]int),
-		backlogAttempted:     make(map[backlogTab]bool),
 		editTitleInput:       editTitleInput,
 		editDescriptionInput: editDescriptionInput,
 		editFieldCursor:      0,
@@ -545,6 +529,11 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				m.state = listView
 				m.filterActive = false
 				m.filterInput.SetValue("")
+				// Clear filter in current list
+				if list := m.getCurrentList(); list != nil {
+					list.filterActive = false
+					list.filteredTasks = nil
+				}
 				m.filteredTasks = nil
 				m.cursor = 0
 				return m, nil
@@ -838,7 +827,8 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				m.cursor = 0
 				m.scrollOffset = 0
 				// Load backlog data if not attempted yet
-				if !m.backlogAttempted[m.currentBacklogTab] && m.client != nil {
+				currentList := m.getCurrentList()
+				if currentList != nil && !currentList.attempted && m.client != nil {
 					m.loading = true
 					tab := m.currentBacklogTab
 					return m, tea.Batch(loadTasksForBacklogTab(m.client, tab, m.getCurrentSprintPath()), m.spinner.Tick)
@@ -876,17 +866,11 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 				if m.currentMode == sprintMode {
 					// Clear sprint data
-					m.sprintTasks = nil
-					m.sprintCounts = make(map[sprintTab]int)
-					m.sprintLoaded = make(map[sprintTab]int)
-					m.sprintAttempted = make(map[sprintTab]bool)
+					m.sprintLists = make(map[sprintTab]*WorkItemList)
 					return m, tea.Batch(loadSprintsWithReload(m.client, true), m.spinner.Tick)
 				} else {
 					// Clear backlog data
-					m.backlogTasks = make(map[backlogTab][]WorkItem)
-					m.backlogCounts = make(map[backlogTab]int)
-					m.backlogLoaded = make(map[backlogTab]int)
-					m.backlogAttempted = make(map[backlogTab]bool)
+					m.backlogLists = make(map[backlogTab]*WorkItemList)
 					// Reload current backlog tab
 					tab := m.currentBacklogTab
 					return m, tea.Batch(loadTasksForBacklogTab(m.client, tab, m.getCurrentSprintPath()), m.spinner.Tick)
@@ -1127,7 +1111,8 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 						m.scrollOffset = 0
 					}
 					// Load sprint data if not attempted yet
-					if !m.sprintAttempted[m.currentTab] && m.sprints[m.currentTab] != nil && m.client != nil {
+					currentList := m.getCurrentList()
+					if currentList != nil && !currentList.attempted && m.sprints[m.currentTab] != nil && m.client != nil {
 						sprint := m.sprints[m.currentTab]
 						m.loading = true
 						tab := m.currentTab
@@ -1144,7 +1129,8 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 						m.scrollOffset = 0
 					}
 					// Load backlog data if not attempted yet
-					if !m.backlogAttempted[m.currentBacklogTab] && m.client != nil {
+					currentList := m.getCurrentList()
+					if currentList != nil && !currentList.attempted && m.client != nil {
 						m.loading = true
 						tab := m.currentBacklogTab
 						return m, tea.Batch(loadTasksForBacklogTab(m.client, tab, m.getCurrentSprintPath()), m.spinner.Tick)
@@ -1228,9 +1214,12 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 							// Collect all currently loaded IDs in this sprint to exclude
 							excludeIDs := make([]int, 0)
-							for _, task := range m.sprintTasks {
-								if task.IterationPath == sprintPath {
-									excludeIDs = append(excludeIDs, task.ID)
+							list := m.getCurrentList()
+							if list != nil {
+								for _, task := range list.tasks {
+									if task.IterationPath == sprintPath {
+										excludeIDs = append(excludeIDs, task.ID)
+									}
 								}
 							}
 
@@ -1240,8 +1229,11 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 							// Load more items for backlog mode
 							// Collect all currently loaded IDs in this backlog tab to exclude
 							excludeIDs := make([]int, 0)
-							for _, task := range m.backlogTasks[m.currentBacklogTab] {
-								excludeIDs = append(excludeIDs, task.ID)
+							list := m.getCurrentList()
+							if list != nil {
+								for _, task := range list.tasks {
+									excludeIDs = append(excludeIDs, task.ID)
+								}
 							}
 							return m, tea.Batch(loadMoreBacklogItems(m.client, m.currentBacklogTab, m.getCurrentSprintPath(), excludeIDs), m.spinner.Tick)
 						}
@@ -1294,11 +1286,6 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 					list.appendTasks(msg.tasks)
 					list.totalCount = msg.totalCount
 
-					// Also update legacy fields for compatibility
-					m.sprintTasks = append(m.sprintTasks, msg.tasks...)
-					m.sprintLoaded[targetTab] = list.loaded
-					m.sprintCounts[targetTab] = list.totalCount
-
 					m.setActionLog(fmt.Sprintf("Loaded %d more items", len(msg.tasks)))
 					m.loading = false
 					m.loadingMore = false
@@ -1306,23 +1293,12 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 					// Initial load or replace
 					list.replaceTasks(msg.tasks, msg.totalCount)
 
-					// Also update legacy fields for compatibility
-					if len(m.sprintTasks) == 0 {
-						m.sprintTasks = msg.tasks
-					} else {
-						m.sprintTasks = append(m.sprintTasks, msg.tasks...)
-					}
-					m.filteredTasks = nil
 					if targetTab == m.currentTab && m.currentMode == sprintMode {
-						m.cursor = 0
-						m.scrollOffset = 0
+						// Sync cursor/scroll from list
+						m.cursor = list.cursor
+						m.scrollOffset = list.scrollOffset
 					}
 					m.statusMessage = ""
-
-					// Update legacy fields for compatibility
-					m.sprintLoaded[targetTab] = list.loaded
-					m.sprintCounts[targetTab] = list.totalCount
-					m.sprintAttempted[targetTab] = list.attempted
 
 					// If this was part of initial loading, decrement counter
 					if m.initialLoading > 0 {
@@ -1353,12 +1329,6 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 					list.appendTasks(msg.tasks)
 					list.totalCount = msg.totalCount
 
-					// Also update legacy fields for compatibility
-					existing := m.backlogTasks[targetTab]
-					m.backlogTasks[targetTab] = append(existing, msg.tasks...)
-					m.backlogLoaded[targetTab] = list.loaded
-					m.backlogCounts[targetTab] = list.totalCount
-
 					m.setActionLog(fmt.Sprintf("Loaded %d more items", len(msg.tasks)))
 					m.loading = false
 					m.loadingMore = false
@@ -1366,19 +1336,12 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 					// Store tasks for specific backlog tab
 					list.replaceTasks(msg.tasks, msg.totalCount)
 
-					// Also update legacy fields for compatibility
-					m.backlogTasks[targetTab] = msg.tasks
-					m.filteredTasks = nil
 					if targetTab == m.currentBacklogTab && m.currentMode == backlogMode {
-						m.cursor = 0
-						m.scrollOffset = 0
+						// Sync cursor/scroll from list
+						m.cursor = list.cursor
+						m.scrollOffset = list.scrollOffset
 					}
 					m.statusMessage = ""
-
-					// Update legacy fields for compatibility
-					m.backlogLoaded[targetTab] = list.loaded
-					m.backlogCounts[targetTab] = list.totalCount
-					m.backlogAttempted[targetTab] = list.attempted
 
 					m.loading = false
 					m.setActionLog(fmt.Sprintf("Loaded %d items", len(msg.tasks)))
@@ -1436,17 +1399,11 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 					m.statusMessage = "Refreshing list..."
 					if m.currentMode == sprintMode {
 						// Clear sprint data and reload
-						m.sprintTasks = nil
-						m.sprintCounts = make(map[sprintTab]int)
-						m.sprintLoaded = make(map[sprintTab]int)
-						m.sprintAttempted = make(map[sprintTab]bool)
+						m.sprintLists = make(map[sprintTab]*WorkItemList)
 						return m, tea.Batch(loadSprintsWithReload(m.client, true), m.spinner.Tick)
 					} else {
 						// Clear backlog data and reload current tab
-						m.backlogTasks = make(map[backlogTab][]WorkItem)
-						m.backlogCounts = make(map[backlogTab]int)
-						m.backlogLoaded = make(map[backlogTab]int)
-						m.backlogAttempted = make(map[backlogTab]bool)
+						m.backlogLists = make(map[backlogTab]*WorkItemList)
 						tab := m.currentBacklogTab
 						return m, tea.Batch(loadTasksForBacklogTab(m.client, tab, m.getCurrentSprintPath()), m.spinner.Tick)
 					}
@@ -1541,17 +1498,11 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			if m.client != nil {
 				if m.currentMode == sprintMode {
 					// Clear sprint data and reload
-					m.sprintTasks = nil
-					m.sprintCounts = make(map[sprintTab]int)
-					m.sprintLoaded = make(map[sprintTab]int)
-					m.sprintAttempted = make(map[sprintTab]bool)
+					m.sprintLists = make(map[sprintTab]*WorkItemList)
 					return m, tea.Batch(loadSprintsWithReload(m.client, true), m.spinner.Tick)
 				} else {
 					// Clear backlog data and reload current tab
-					m.backlogTasks = make(map[backlogTab][]WorkItem)
-					m.backlogCounts = make(map[backlogTab]int)
-					m.backlogLoaded = make(map[backlogTab]int)
-					m.backlogAttempted = make(map[backlogTab]bool)
+					m.backlogLists = make(map[backlogTab]*WorkItemList)
 					tab := m.currentBacklogTab
 					return m, tea.Batch(loadTasksForBacklogTab(m.client, tab, m.getCurrentSprintPath()), m.spinner.Tick)
 				}
@@ -1583,17 +1534,11 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				if m.client != nil {
 					if m.currentMode == sprintMode {
 						// Clear sprint data and reload
-						m.sprintTasks = nil
-						m.sprintCounts = make(map[sprintTab]int)
-						m.sprintLoaded = make(map[sprintTab]int)
-						m.sprintAttempted = make(map[sprintTab]bool)
+						m.sprintLists = make(map[sprintTab]*WorkItemList)
 						return m, tea.Batch(loadSprintsWithReload(m.client, true), m.spinner.Tick)
 					} else {
 						// Clear backlog data and reload current tab
-						m.backlogTasks = make(map[backlogTab][]WorkItem)
-						m.backlogCounts = make(map[backlogTab]int)
-						m.backlogLoaded = make(map[backlogTab]int)
-						m.backlogAttempted = make(map[backlogTab]bool)
+						m.backlogLists = make(map[backlogTab]*WorkItemList)
 						tab := m.currentBacklogTab
 						return m, tea.Batch(loadTasksForBacklogTab(m.client, tab, m.getCurrentSprintPath()), m.spinner.Tick)
 					}
@@ -1755,29 +1700,39 @@ func getWorkItemIcon(workItemType string) string {
 
 func (m *model) filterSearch() {
 	query := strings.ToLower(m.filterInput.Value())
+	list := m.getCurrentList()
+	if list == nil {
+		return
+	}
+
 	if query == "" {
+		list.filteredTasks = nil
+		list.filterActive = false
+		// Also sync model-level filter state
 		m.filteredTasks = nil
 		return
 	}
 
-	currentTasks := m.getCurrentTasks()
 	var filtered []WorkItem
-	for _, task := range currentTasks {
+	for _, task := range list.tasks {
 		if strings.Contains(strings.ToLower(task.Title), query) ||
 			strings.Contains(fmt.Sprintf("%d", task.ID), query) {
 			filtered = append(filtered, task)
 		}
 	}
+	list.filteredTasks = filtered
+	list.filterActive = true
+	// Also sync model-level filter state for backward compatibility
 	m.filteredTasks = filtered
 }
 
 func (m model) getVisibleTasks() []WorkItem {
-	tasks := m.getCurrentTasks()
-
-	// Apply filter if active
-	if m.filterActive && m.filteredTasks != nil {
-		tasks = m.filteredTasks
+	list := m.getCurrentList()
+	if list == nil {
+		return []WorkItem{}
 	}
+
+	tasks := list.getVisibleTasks()
 
 	// Filter based on current mode
 	if m.currentMode == sprintMode {
@@ -1902,25 +1857,6 @@ func (wl *WorkItemList) replaceTasks(tasks []WorkItem, totalCount int) {
 	wl.loaded = len(tasks)
 	wl.totalCount = totalCount
 	wl.attempted = true
-}
-
-// adjustScrollOffset ensures cursor is within visible area
-func (wl *WorkItemList) adjustScrollOffset(contentHeight int) {
-	// Ensure cursor is within visible area
-	if wl.cursor < wl.scrollOffset {
-		wl.scrollOffset = wl.cursor
-	} else if wl.cursor >= wl.scrollOffset+contentHeight {
-		wl.scrollOffset = wl.cursor - contentHeight + 1
-	}
-	if wl.scrollOffset < 0 {
-		wl.scrollOffset = 0
-	}
-}
-
-// resetCursor resets the cursor and scroll to the beginning
-func (wl *WorkItemList) resetCursor() {
-	wl.cursor = 0
-	wl.scrollOffset = 0
 }
 
 // getCurrentList returns the currently active WorkItemList based on mode and tab
@@ -2203,56 +2139,18 @@ func (m model) getTabHint() string {
 
 // getCurrentTasks returns the task list for the current mode
 func (m model) getCurrentTasks() []WorkItem {
-	if m.currentMode == sprintMode {
-		return m.sprintTasks
-	}
-	// Return tasks for current backlog tab
-	if tasks, ok := m.backlogTasks[m.currentBacklogTab]; ok {
-		return tasks
+	if list := m.getCurrentList(); list != nil {
+		return list.tasks
 	}
 	return []WorkItem{}
 }
 
 // setCurrentTasks sets the task list for the current mode
 func (m *model) setCurrentTasks(tasks []WorkItem) {
-	if m.currentMode == sprintMode {
-		m.sprintTasks = tasks
-	} else {
-		m.backlogTasks[m.currentBacklogTab] = tasks
-	}
-}
-
-// appendCurrentTasks appends to the task list for the current mode
-func (m *model) appendCurrentTasks(tasks []WorkItem) {
-	if m.currentMode == sprintMode {
-		m.sprintTasks = append(m.sprintTasks, tasks...)
-	} else {
-		existing := m.backlogTasks[m.currentBacklogTab]
-		m.backlogTasks[m.currentBacklogTab] = append(existing, tasks...)
-	}
-}
-
-func (m model) getVisibleTasksCount() int {
-	// Get count of visible tasks based on current mode
-	if m.currentMode == sprintMode {
-		sprint := m.sprints[m.currentTab]
-		if sprint == nil || sprint.Path == "" {
-			return len(m.sprintTasks)
-		}
-
-		count := 0
-		for _, task := range m.sprintTasks {
-			if task.IterationPath == sprint.Path {
-				count++
-			}
-		}
-		return count
-	} else {
-		// Return count for current backlog tab
-		if tasks, ok := m.backlogTasks[m.currentBacklogTab]; ok {
-			return len(tasks)
-		}
-		return 0
+	m.ensureCurrentListExists()
+	if list := m.getCurrentList(); list != nil {
+		list.tasks = tasks
+		list.loaded = len(tasks)
 	}
 }
 

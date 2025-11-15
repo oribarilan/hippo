@@ -2,6 +2,22 @@
 
 A terminal user interface (TUI) for Azure DevOps task management, built with Go and Bubbletea.
 
+## TODOs
+
+- auto release on main branch push (use GoReleaser)
+- support curl install for first installation (support MacOS, Windows, Linux)
+- In-app update check 
+- Use go-selfupdate if update available (and offer "skip version")
+
+- changelog generation
+- changelog support in-app
+- add license file (MIT)
+- add tests for key components
+- add CI for tests and linting
+- add code coverage reporting
+- stylize the header bar
+- ascii art welcome?
+
 ## Features
 
 - 📋 View all your Azure DevOps work items in a clean terminal interface
