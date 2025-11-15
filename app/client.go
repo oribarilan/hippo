@@ -120,7 +120,7 @@ func (c *AzureDevOpsClient) GetWorkItemByID(id int) (*WorkItem, error) {
 }
 
 func (c *AzureDevOpsClient) GetWorkItems() ([]WorkItem, error) {
-	return c.GetWorkItemsExcluding(nil, "", 30)
+	return c.GetWorkItemsExcluding(nil, "", 40) // Note: This uses hardcoded 40, should use constant from main
 }
 
 func (c *AzureDevOpsClient) GetWorkItemsForSprint(sprintPath string, excludeIDs []int, limit int) ([]WorkItem, error) {
@@ -303,6 +303,10 @@ func (c *AzureDevOpsClient) convertWorkItem(wi workitemtracking.WorkItem) WorkIt
 		task.IterationPath = iterationPath
 	}
 
+	if areaPath, ok := fields["System.AreaPath"].(string); ok {
+		task.AreaPath = areaPath
+	}
+
 	// Extract parent relationship from relations
 	if wi.Relations != nil {
 		for _, relation := range *wi.Relations {
@@ -435,6 +439,20 @@ func (c *AzureDevOpsClient) UpdateWorkItem(workItemID int, updates map[string]in
 	_, err := c.workItemClient.UpdateWorkItem(c.ctx, updateArgs)
 	if err != nil {
 		return fmt.Errorf("failed to update work item: %w", err)
+	}
+
+	return nil
+}
+
+// DeleteWorkItem deletes a work item by ID
+func (c *AzureDevOpsClient) DeleteWorkItem(workItemID int) error {
+	deleteArgs := workitemtracking.DeleteWorkItemArgs{
+		Id: &workItemID,
+	}
+
+	_, err := c.workItemClient.DeleteWorkItem(c.ctx, deleteArgs)
+	if err != nil {
+		return fmt.Errorf("failed to delete work item: %w", err)
 	}
 
 	return nil
@@ -816,4 +834,78 @@ func (c *AzureDevOpsClient) executeCountQuery(query string) (int, error) {
 	}
 
 	return len(*result.WorkItems), nil
+}
+
+// CreateWorkItem creates a new work item in Azure DevOps
+func (c *AzureDevOpsClient) CreateWorkItem(title string, workItemType string, iterationPath string, parentID *int, areaPath string) (*WorkItem, error) {
+	// Build patch document
+	op := webapi.OperationValues.Add
+	var patchDoc []webapi.JsonPatchOperation
+
+	// Required field: Title
+	titlePath := "/fields/System.Title"
+	patchDoc = append(patchDoc, webapi.JsonPatchOperation{
+		Op:    &op,
+		Path:  &titlePath,
+		Value: title,
+	})
+
+	// Required field: AreaPath
+	areaPathField := "/fields/System.AreaPath"
+	if areaPath == "" {
+		areaPath = c.project // Default to project root if not provided
+	}
+	patchDoc = append(patchDoc, webapi.JsonPatchOperation{
+		Op:    &op,
+		Path:  &areaPathField,
+		Value: areaPath,
+	})
+
+	// Add iteration path if provided, otherwise default to project root
+	iterPathField := "/fields/System.IterationPath"
+	if iterationPath != "" {
+		patchDoc = append(patchDoc, webapi.JsonPatchOperation{
+			Op:    &op,
+			Path:  &iterPathField,
+			Value: iterationPath,
+		})
+	} else {
+		patchDoc = append(patchDoc, webapi.JsonPatchOperation{
+			Op:    &op,
+			Path:  &iterPathField,
+			Value: c.project,
+		})
+	}
+
+	// Add parent relationship if provided
+	if parentID != nil {
+		parentURL := fmt.Sprintf("%s/_apis/wit/workItems/%d", c.organizationURL, *parentID)
+		relPath := "/relations/-"
+		patchDoc = append(patchDoc, webapi.JsonPatchOperation{
+			Op:   &op,
+			Path: &relPath,
+			Value: map[string]interface{}{
+				"rel": "System.LinkTypes.Hierarchy-Reverse",
+				"url": parentURL,
+			},
+		})
+	}
+
+	// Create work item
+	args := workitemtracking.CreateWorkItemArgs{
+		Document: &patchDoc,
+		Project:  &c.project,
+		Type:     &workItemType,
+	}
+
+	createdItem, err := c.workItemClient.CreateWorkItem(c.ctx, args)
+	if err != nil {
+		// Provide detailed error information for debugging
+		return nil, fmt.Errorf("failed to create work item (Type: %s, Project: %s, IterationPath: %s, HasParent: %v): %w",
+			workItemType, c.project, iterationPath, parentID != nil, err)
+	}
+
+	// Convert to WorkItem and return
+	workItem := c.convertWorkItem(*createdItem)
+	return &workItem, nil
 }
