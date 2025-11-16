@@ -1169,10 +1169,20 @@ func (m model) handleSprintsLoadedMsg(msg sprintsLoadedMsg) (model, tea.Cmd) {
 			if len(loadCmds) > 0 {
 				m.loading = true
 				m.initialLoading = sprintCount // Track how many sprints we're loading
+				// Transition from loading screen to list view
+				if m.state == loadingView {
+					m.state = listView
+				}
 				loadCmds = append(loadCmds, m.spinner.Tick)
 				return m, tea.Batch(loadCmds...)
 			}
 		}
+	}
+
+	// Transition from loading screen to list view if no sprints to load
+	if m.state == loadingView {
+		m.state = listView
+		m.loading = false
 	}
 
 	return m, nil

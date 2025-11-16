@@ -16,6 +16,8 @@ func (m model) View() string {
 	}
 
 	switch m.state {
+	case loadingView:
+		return m.renderLoadingScreen()
 	case detailView:
 		return m.renderDetailView()
 	case statePickerView:
@@ -37,6 +39,83 @@ func (m model) View() string {
 	default:
 		return m.renderListView()
 	}
+}
+
+// renderLoadingScreen renders the initial loading screen with centered text
+func (m model) renderLoadingScreen() string {
+	hippoArt := `⠀⠀⠀⠀⠀⠀⠀⠀⠀⢀⣀⢤⣀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⣠⠖⠓⠲⢤⡀⠀⠀⠀⠀⠀⠀⠀
+⠀⠀⠀⠀⠀⠀⠀⣀⡾⡭⢤⡄⠈⡇⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⢠⡇⢠⡾⠛⢲⣿⡀⠀⠀⠀⠀⠀⠀
+⠀⠀⠀⠀⠀⠀⠀⢹⣿⠁⢸⣿⠀⢻⡄⢀⣠⠤⠴⠶⠶⢦⡤⠤⠒⠒⠒⠒⠦⣤⡀⠀⠀⣸⠀⢸⡇⠀⢸⢿⡇⠀⠀⠀⠀⠀⠀
+⠀⠀⠀⠀⠀⠀⠀⠸⣿⣆⠀⢿⣄⣤⠟⠉⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⢀⡤⠴⠦⢭⣷⣶⠃⢀⡞⠀⣠⠋⡼⠀⠀⠀⠀⠀⠀⠀
+⠀⠀⠀⠀⠀⠀⠀⠀⠙⢿⣷⢴⡿⠋⠉⠉⠓⠄⠀⠀⠀⠀⠀⠀⠀⡔⠁⠀⠀⠀⠀⠈⠻⣷⣿⠴⢊⡡⠞⠁⠀⠀⠀⠀⠀⠀⠀
+⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠈⣿⠁⣀⣀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠈⠀⠀⠤⣤⣤⡀⠀⠀⠀⢻⡚⠉⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀
+⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⢠⡿⠚⠛⠻⣧⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⢰⠟⠉⠉⠙⢦⠀⠀⠈⢧⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀
+⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⡼⢁⣴⣶⣤⢸⡄⠀⠀⠀⠀⠀⠀⠀⠀⠀⡟⢀⣾⣿⠷⣬⡇⠀⠀⠈⢳⡄⠀⠀⠀⠀⠀⠀⠀⠀⠀
+⠀⠀⠀⠀⠀⠀⠀⠀⢀⣼⡇⣼⣿⣧⣽⣾⠃⠀⠀⠀⠀⠀⠀⠀⠀⠀⣿⠈⣿⣷⣴⣿⡟⠀⠀⠀⠀⠹⡆⠀⠀⠀⠀⠀⠀⠀⠀
+⠀⠀⠀⠀⠀⠀⠀⠀⡾⠁⣳⣙⣿⣿⣿⣃⡀⠀⠀⠀⠀⠀⣀⣀⡀⠀⠀⠳⣝⣿⡿⠟⠳⠀⠀⠀⠀⠀⢻⡀⠀⠀⠀⠀⠀⠀⠀
+⠀⠀⠀⠀⠀⠀⠀⢸⡇⠀⣠⠿⠏⠉⠉⠉⠉⠉⠙⡿⠛⠉⠉⠀⠉⠁⠀⠀⠜⠁⠀⠀⠀⠀⠀⠀⠀⠀⠸⡇⠀⠀⠀⠀⠀⠀⠀
+⠀⠀⠀⠀⠀⠀⠀⠀⣧⡾⠁⢠⣿⠙⣆⠀⠀⠀⡼⠁⠀⠀⠀⠀⡴⢋⣿⣷⠀⠀⠀⢀⣶⡄⠀⠀⠀⠀⠀⣷⠀⠀⠀⠀⠀⠀⠀
+⠀⠀⠀⠀⠀⠀⠀⠀⣼⠁⠀⠈⠻⣿⡿⠀⠀⢠⡇⠀⠀⠀⠀⠐⢳⠿⠛⠉⠀⠀⠀⢸⣿⠃⠀⠀⠀⠀⢠⡟⠀⠀⠀⠀⠀⠀⠀
+⠀⠀⠀⠀⠀⠀⠀⠀⣿⠀⠀⠀⠀⠈⠁⠀⠀⢸⡇⠀⠀⠀⠀⠀⢀⠀⠀⠀⠀⠀⠀⠈⡇⠀⠀⠀⠀⢠⡾⠁⠀⠀⠀⠀⠀⠀⠀
+⠀⠀⠀⠀⠀⠀⠀⠀⠸⣆⠀⠀⠀⠀⠀⠋⠀⠘⣇⠀⠀⠀⠂⠀⠈⠀⠀⠀⠀⠀⠀⢸⠃⠀⠀⣠⡴⠋⠀⠀⠀⠀⠀⠀⠀⠀⠀
+⠀⠀⠀⠀⠀⠀⠀⠀⠀⠙⣦⡀⠈⠁⠀⢀⣀⣶⣦⣤⣀⠀⠀⠉⠀⠐⠂⠀⠀⢀⣰⠏⢀⣤⣾⡉⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀
+⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⢀⡿⣷⡒⠋⠉⠁⠀⣀⣀⠈⠙⠓⠶⠤⠤⠤⠴⠖⣋⣥⠞⠋⢸⠏⣇⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀
+⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⣸⣇⠈⠙⠓⠒⠚⠋⠉⠉⠙⠲⢤⣄⣀⣀⣤⠴⠚⠯⠀⠀⣠⠏⢀⡿⣄⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀
+⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⣯⠙⢦⣀⠀⠀⠀⠀⠀⠀⠀⠀⠉⠀⠀⠀⠀⠀⠀⠀⠀⠞⠁⢀⣾⠁⠈⠳⡄⠀⠀⠀⠀⠀⠀⠀⠀
+⠀⠀⠀⠀⠀⠀⠀⠀⠀⣸⠛⢧⡀⠉⠓⠦⢤⣀⣀⣀⣀⠀⠀⠀⠀⣀⣀⣀⠄⠀⠀⠀⢠⡞⠁⢠⠀⠀⠹⡄⠀⠀⠀⠀⠀⠀⠀
+⠀⠀⠀⠀⠀⠀⠀⠀⠀⡇⠀⠈⠻⢦⡀⠀⠀⠀⠀⠀⠉⠉⠉⠉⠉⠁⠀⠀⠀⢀⡠⠖⠉⠀⠀⢸⡇⠀⠀⢹⡀⠀⠀⠀⠀⠀⠀
+⠀⠀⠀⠀⠀⠀⠀⠀⠀⡇⠀⠀⠀⠀⠙⣶⣤⣀⠀⠀⠀⠀⠀⣀⣠⠀⠀⡀⠘⠉⠀⠀⠀⠀⠀⣸⡇⠀⠀⣀⣷⠀⠀⠀⠀⢀⠀
+⠀⠀⠀⠀⠀⠀⠀⠀⠀⢳⡀⠀⠀⠀⠀⠸⣏⠈⠉⠙⠉⠉⠉⠁⠀⠀⣸⠇⠀⠀⠀⠀⠀⠀⢠⣿⠇⠀⠀⠀⠙⢧⠀⠀⢀⠞⠂
+⠀⠀⠀⠀⠀⠀⠀⠀⣀⠼⣷⠀⠀⠀⠀⠀⢻⣧⠀⠀⠀⠀⠀⠀⠀⣰⠿⠃⠀⠀⠀⠀⢀⣴⣿⡟⠀⠀⠀⠀⠀⠀⢷⠊⠁⡼⠁
+⠀⣠⠴⠒⣦⣴⣶⡋⠁⠀⢨⠀⠀⠀⠀⠀⠀⠹⣷⡄⠀⠀⠀⠀⣰⠏⠀⠀⠀⠀⠀⠀⢋⣿⡟⠀⢀⣠⣤⣤⣤⣴⣿⣶⠋⠀⠀
+⡾⢿⠒⠋⠀⢯⣙⣷⡀⠀⠘⣆⠀⠀⠀⠀⠀⠐⢹⡟⠒⠲⠖⠊⣿⡀⠀⠀⠀⠀⠀⠀⣼⠟⠀⢰⡿⢋⡽⠋⠈⠧⣍⣻⡇⠀⠀
+⣇⣸⠀⠀⠀⠀⠈⠉⠳⡀⠀⢸⡄⠀⢀⣀⣀⡀⠀⣧⠦⠀⠀⢀⣿⠁⢠⣄⣤⠀⠀⢠⡟⠀⣠⠛⠋⠉⠀⠀⠀⠀⢀⢼⣇⠀⠀
+⠙⢧⡀⠀⠀⠀⠀⠀⠀⢹⣆⣸⠇⠐⠛⠉⠉⠀⠀⠹⣿⠀⢠⣾⠃⠈⠁⠀⠉⠀⠀⠸⡇⢠⠇⠀⠀⠀⠀⠀⠀⠀⣇⣾⠏⠀⠀
+⠀⠈⠙⢦⡀⠀⠀⠀⢀⣼⣿⠷⠶⣄⠀⣀⣀⡀⢀⡖⠻⣦⣼⣧⠤⢄⠀⣠⣤⣄⣠⠞⣷⣾⠀⠀⠀⠀⠀⠀⢀⡴⠛⠉⠀⠀⠀
+⠀⠀⠀⠀⠉⠓⠒⠒⠛⠁⠘⠦⣤⣼⣶⣁⣀⣹⡾⠤⠚⠁⠘⠧⣤⡼⠶⣇⣠⠼⠟⠛⠉⠀⠳⠤⣤⣤⠿⠟⠋⠀⠀⠀⠀⠀⠀`
+
+	// Calculate vertical centering
+	artLines := strings.Split(hippoArt, "\n")
+	totalHeight := 3 + len(artLines) // spinner line + blank + art
+	verticalPadding := (m.height - totalHeight) / 2
+	if verticalPadding < 0 {
+		verticalPadding = 0
+	}
+
+	// Style for text
+	titleStyle := lipgloss.NewStyle().
+		Foreground(lipgloss.Color("212")).
+		Bold(true).
+		Width(m.width).
+		Align(lipgloss.Center)
+
+	// Style the ASCII art
+	artStyle := lipgloss.NewStyle().
+		Foreground(lipgloss.Color("212")).
+		Width(m.width).
+		Align(lipgloss.Center)
+
+	// Build the centered content
+	var content strings.Builder
+
+	// Add vertical padding
+	for i := 0; i < verticalPadding; i++ {
+		content.WriteString("\n")
+	}
+
+	// Add the "Hippo" text with spinners on the sides
+	spinnerView := m.spinner.View()
+	titleLine := fmt.Sprintf("%s  Hippo  %s", spinnerView, spinnerView)
+	content.WriteString(titleStyle.Render(titleLine) + "\n")
+
+	content.WriteString("\n")
+
+	// Add the ASCII art hippo
+	for _, line := range artLines {
+		content.WriteString(artStyle.Render(line) + "\n")
+	}
+
+	return content.String()
 }
 
 // renderLogLine renders the action log line if there is one
@@ -170,8 +249,9 @@ func (m model) renderListView() string {
 		content.WriteString(m.styles.StatusMsg.Render(m.statusMessage) + "\n\n")
 	}
 
-	// Show loader if loading (but not loadingMore - that shows inline)
-	if m.loading && !m.loadingMore {
+	// Show loader if loading (but not loadingMore and not initial loading)
+	// During initial loading (m.initialLoading > 0), we want to show the list view without a spinner
+	if m.loading && !m.loadingMore && m.initialLoading == 0 {
 		content.WriteString(m.styles.Loader.Render(fmt.Sprintf("%s %s", m.spinner.View(), m.statusMessage)) + "\n\n")
 
 		// Footer with keybindings

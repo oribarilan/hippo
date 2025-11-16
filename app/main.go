@@ -22,7 +22,8 @@ const defaultLoadLimit = 40
 type viewState int
 
 const (
-	listView viewState = iota
+	loadingView viewState = iota
+	listView
 	detailView
 	statePickerView
 	findView
@@ -128,7 +129,7 @@ type model struct {
 
 func initialModel() model {
 	s := spinner.New()
-	s.Spinner = spinner.Dot
+	s.Spinner = spinner.Line
 	s.Style = lipgloss.NewStyle().Foreground(lipgloss.Color("205"))
 
 	filterInput := textinput.New()
@@ -165,7 +166,7 @@ func initialModel() model {
 		filteredTasks:        []WorkItem{},
 		cursor:               0,
 		scrollOffset:         0,
-		state:                listView,
+		state:                loadingView,
 		loading:              true,
 		spinner:              s,
 		filterInput:          filterInput,
