@@ -72,61 +72,7 @@ func (m model) renderFilterView() string {
 		treeItem := treeItems[i]
 		isSelected := m.ui.cursor == i
 
-		cursor := "  "
-		if isSelected {
-			cursor = "❯ "
-		}
-
-		// Get tree drawing prefix and color it
-		var treePrefix string
-		if isSelected {
-			treePrefix = m.styles.TreeEdgeSelected.Render(getTreePrefix(treeItem))
-		} else {
-			treePrefix = m.styles.TreeEdge.Render(getTreePrefix(treeItem))
-		}
-
-		// Get work item type icon
-		icon := getWorkItemIcon(treeItem.WorkItem.WorkItemType)
-		var styledIcon string
-		if isSelected {
-			styledIcon = m.styles.IconSelected.Render(icon)
-		} else {
-			styledIcon = m.styles.Icon.Render(icon)
-		}
-
-		// Get state category to determine styling
-		category := m.getStateCategory(treeItem.WorkItem.State)
-
-		// Get styles based on category and selection
-		stateStyle := m.styles.GetStateStyle(category, isSelected)
-		itemTitleStyle := m.styles.GetItemTitleStyle(category, isSelected, len(treeItem.WorkItem.Children) > 0)
-
-		// Apply the styling
-		taskTitle := itemTitleStyle.Render(treeItem.WorkItem.Title)
-		state := stateStyle.Render(treeItem.WorkItem.State)
-
-		// Build the line with icon
-		var line string
-		if isSelected {
-			// Apply background to cursor and spacing too
-			cursorStyled := m.styles.Selected.Render(cursor)
-			spacer := m.styles.Selected.Render(" ")
-			line = fmt.Sprintf("%s%s%s%s%s%s",
-				cursorStyled,
-				treePrefix,
-				styledIcon,
-				spacer,
-				taskTitle,
-				spacer+state)
-		} else {
-			line = fmt.Sprintf("%s%s%s %s %s",
-				cursor,
-				treePrefix,
-				styledIcon,
-				taskTitle,
-				state)
-		}
-
+		line := m.renderTreeItemFilter(treeItem, isSelected)
 		content.WriteString(line + "\n")
 	}
 

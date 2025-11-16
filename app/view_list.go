@@ -127,37 +127,9 @@ func (m model) renderListView() string {
 			// This is the "Load More" item
 			if m.hasMoreItems() {
 				remaining := m.getRemainingCount()
-
-				cursor := " "
 				loadMoreIdx := len(treeItems)
-				if m.ui.cursor == loadMoreIdx {
-					cursor = ">"
-				}
-
-				var loadMoreText string
-
-				// Show spinner inline if loading more
-				if m.loadingMore {
-					loadMoreText = fmt.Sprintf("%s %s Loading more items...", cursor, m.spinner.View())
-					if m.ui.cursor == loadMoreIdx {
-						loadMoreText = m.styles.Selected.Render(loadMoreText)
-					} else {
-						loadMoreText = m.styles.LoadMore.Render(loadMoreText)
-					}
-				} else {
-					if remaining > 30 {
-						loadMoreText = fmt.Sprintf("%s Load More (+30)", cursor)
-					} else {
-						loadMoreText = fmt.Sprintf("%s Load All (+%d)", cursor, remaining)
-					}
-
-					if m.ui.cursor == loadMoreIdx {
-						loadMoreText = m.styles.Selected.Render(loadMoreText)
-					} else {
-						loadMoreText = m.styles.LoadMore.Render(loadMoreText)
-					}
-				}
-
+				isSelected := m.ui.cursor == loadMoreIdx
+				loadMoreText := m.renderLoadMoreItem(isSelected, remaining, m.loadingMore)
 				content.WriteString(loadMoreText + "\n")
 			}
 			continue
@@ -167,70 +139,7 @@ func (m model) renderListView() string {
 		isSelected := m.ui.cursor == i
 		isBatchSelected := m.batch.selectedItems[treeItem.WorkItem.ID]
 
-		cursor := " "
-		if isSelected {
-			cursor = "❯"
-		}
-
-		// Orange bar for batch selected items - thicker bar
-		batchIndicator := "  "
-		if isBatchSelected {
-			batchIndicator = m.styles.BatchIndicator.Render("█ ") // Block character for thicker bar
-		}
-
-		// Get tree drawing prefix and color it
-		var treePrefix string
-		if isSelected {
-			treePrefix = m.styles.TreeEdgeSelected.Render(getTreePrefix(treeItem))
-		} else {
-			treePrefix = m.styles.TreeEdge.Render(getTreePrefix(treeItem))
-		}
-
-		// Get work item type icon
-		icon := getWorkItemIcon(treeItem.WorkItem.WorkItemType)
-		var styledIcon string
-		if isSelected {
-			styledIcon = m.styles.IconSelected.Render(icon)
-		} else {
-			styledIcon = m.styles.Icon.Render(icon)
-		}
-
-		// Get state category to determine styling
-		category := m.getStateCategory(treeItem.WorkItem.State)
-
-		// Get styles based on category and selection
-		stateStyle := m.styles.GetStateStyle(category, isSelected)
-		itemTitleStyle := m.styles.GetItemTitleStyle(category, isSelected, len(treeItem.WorkItem.Children) > 0)
-
-		// Apply the styling
-		taskTitle := itemTitleStyle.Render(treeItem.WorkItem.Title)
-		state := stateStyle.Render(treeItem.WorkItem.State)
-
-		// Build the line with icon
-		var line string
-		if isSelected {
-			// Apply background to cursor and spacing too
-			cursorStyled := m.styles.Selected.Render(cursor)
-			spacer := m.styles.Selected.Render(" ")
-			line = fmt.Sprintf("%s%s%s%s%s%s%s%s",
-				batchIndicator,
-				cursorStyled,
-				spacer,
-				treePrefix,
-				styledIcon,
-				spacer,
-				taskTitle,
-				spacer+state)
-		} else {
-			line = fmt.Sprintf("%s%s %s%s %s %s",
-				batchIndicator,
-				cursor,
-				treePrefix,
-				styledIcon,
-				taskTitle,
-				state)
-		}
-
+		line := m.renderTreeItemList(treeItem, isSelected, isBatchSelected)
 		content.WriteString(line + "\n")
 	}
 

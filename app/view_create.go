@@ -164,24 +164,8 @@ func (m model) renderCreateView() string {
 		// Check if this is a regular tree item
 		if treeIdx < len(treeItems) {
 			item := treeItems[treeIdx]
-			task := item.WorkItem
-
-			// Build tree prefix
-			treePrefix := getTreePrefix(item)
-			icon := getWorkItemIcon(task.WorkItemType)
-
-			// Get state style
-			category := m.getStateCategory(task.State)
-			stateStyle := m.styles.GetStateStyle(category, false)
-
-			// Build the line
-			var line strings.Builder
-			line.WriteString(m.styles.TreeEdge.Render(treePrefix))
-			line.WriteString(m.styles.Icon.Render(icon + " "))
-			line.WriteString(stateStyle.Render(fmt.Sprintf("[%s] ", task.State)))
-			line.WriteString(stateStyle.Render(fmt.Sprintf("#%d - %s", task.ID, task.Title)))
-
-			content.WriteString(line.String() + "\n")
+			line := m.renderTreeItemCreate(item)
+			content.WriteString(line + "\n")
 			visibleIdx++
 		} else if treeIdx == len(treeItems) && m.hasMoreItems() {
 			// "Load More" item
