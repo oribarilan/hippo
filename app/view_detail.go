@@ -3,8 +3,6 @@ package main
 import (
 	"fmt"
 	"strings"
-
-	"github.com/charmbracelet/lipgloss"
 )
 
 func (m model) renderDetailView() string {
@@ -39,26 +37,9 @@ func (m model) renderEditView() string {
 	}
 	content.WriteString(m.renderTitleBar(titleText))
 
-	// Styles
-	labelStyle := lipgloss.NewStyle().
-		Foreground(lipgloss.Color("86")).
-		Bold(true).
-		Width(15)
-
-	helpStyle := lipgloss.NewStyle().
-		Foreground(lipgloss.Color("241")).
-		Italic(true)
-
-	sectionStyle := lipgloss.NewStyle().
-		MarginTop(1).
-		MarginBottom(1)
-
 	// Show loading spinner if saving
 	if m.loading {
-		loaderStyle := lipgloss.NewStyle().
-			Foreground(lipgloss.Color("86")).
-			MarginLeft(2)
-		content.WriteString(loaderStyle.Render(fmt.Sprintf("%s %s", m.spinner.View(), m.statusMessage)) + "\n\n")
+		content.WriteString(m.styles.Loader.Render(fmt.Sprintf("%s %s", m.spinner.View(), m.statusMessage)) + "\n\n")
 
 		// Footer with keybindings
 		keybindings := "Saving changes..."
@@ -68,18 +49,18 @@ func (m model) renderEditView() string {
 	}
 
 	// Title field
-	content.WriteString(sectionStyle.Render(labelStyle.Render("Title:") + "\n" + m.edit.titleInput.View()))
+	content.WriteString(m.styles.EditSection.Render(m.styles.EditLabel.Render("Title:") + "\n" + m.edit.titleInput.View()))
 	content.WriteString("\n")
 	if m.edit.fieldCursor == 0 {
-		content.WriteString(helpStyle.Render("  Enter the work item title") + "\n")
+		content.WriteString(m.styles.EditHelp.Render("  Enter the work item title") + "\n")
 	}
 	content.WriteString("\n")
 
 	// Description field
-	content.WriteString(sectionStyle.Render(labelStyle.Render("Description:") + "\n" + m.edit.descriptionInput.View()))
+	content.WriteString(m.styles.EditSection.Render(m.styles.EditLabel.Render("Description:") + "\n" + m.edit.descriptionInput.View()))
 	content.WriteString("\n")
 	if m.edit.fieldCursor == 1 {
-		content.WriteString(helpStyle.Render("  Multi-line text editor (HTML will be stripped)") + "\n")
+		content.WriteString(m.styles.EditHelp.Render("  Multi-line text editor (HTML will be stripped)") + "\n")
 	}
 	content.WriteString("\n")
 

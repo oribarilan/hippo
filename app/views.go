@@ -2,8 +2,6 @@ package main
 
 import (
 	"fmt"
-	"os/exec"
-	"runtime"
 	"strings"
 
 	"github.com/charmbracelet/lipgloss"
@@ -167,24 +165,4 @@ func (m model) renderFooter(keybindings string) string {
 	footer.WriteString(m.styles.Help.Render(keybindings))
 
 	return footer.String()
-}
-
-// openInBrowser opens the work item in a browser
-func openInBrowser(orgURL, project string, workItemID int) error {
-	// Clean up org URL
-	orgURL = strings.TrimSuffix(orgURL, "/")
-
-	url := fmt.Sprintf("%s/%s/_workitems/edit/%d", orgURL, project, workItemID)
-
-	var cmd *exec.Cmd
-	switch runtime.GOOS {
-	case "darwin":
-		cmd = exec.Command("open", url)
-	case "windows":
-		cmd = exec.Command("cmd", "/c", "start", url)
-	default: // linux and others
-		cmd = exec.Command("xdg-open", url)
-	}
-
-	return cmd.Start()
 }

@@ -3,8 +3,6 @@ package main
 import (
 	"fmt"
 	"strings"
-
-	"github.com/charmbracelet/lipgloss"
 )
 
 func (m model) renderStatePickerView() string {
@@ -13,11 +11,6 @@ func (m model) renderStatePickerView() string {
 	// Title bar
 	titleText := "Select New State"
 	content.WriteString(m.renderTitleBar(titleText))
-
-	selectedStyle := lipgloss.NewStyle().
-		Background(lipgloss.Color("62")).
-		Foreground(lipgloss.Color("230")).
-		Bold(true)
 
 	if m.selectedTask != nil {
 		content.WriteString(fmt.Sprintf("Current state: %s\n\n", m.selectedTask.State))
@@ -32,7 +25,7 @@ func (m model) renderStatePickerView() string {
 		line := fmt.Sprintf("%s %s", cursor, state)
 
 		if m.stateCursor == i {
-			line = selectedStyle.Render(line)
+			line = m.styles.Selected.Render(line)
 		}
 
 		content.WriteString(line + "\n")
@@ -160,10 +153,7 @@ func (m model) renderFindView() string {
 	content.WriteString(m.filter.findInput.View() + "\n\n")
 
 	// Note about query behavior
-	noteStyle := lipgloss.NewStyle().
-		Foreground(lipgloss.Color("241")).
-		Italic(true)
-	content.WriteString(noteStyle.Render("Note: Queries all work items assigned to @Me") + "\n")
+	content.WriteString(m.styles.Hint.Render("Note: Queries all work items assigned to @Me") + "\n")
 
 	// Footer with keybindings
 	keybindings := "enter: apply find • esc: cancel"
@@ -178,32 +168,18 @@ func (m model) renderErrorView() string {
 	// Title bar
 	content.WriteString(m.renderTitleBar("Error Details"))
 
-	// Error message style
-	errorStyle := lipgloss.NewStyle().
-		Foreground(lipgloss.Color("196")).
-		Bold(true).
-		MarginBottom(1)
-
-	detailStyle := lipgloss.NewStyle().
-		Foreground(lipgloss.Color("230")).
-		Width(m.ui.width - 4).
-		PaddingLeft(2)
-
 	// Display the error
-	content.WriteString(errorStyle.Render("An error occurred:") + "\n\n")
+	content.WriteString(m.styles.Error.Render("An error occurred:") + "\n\n")
+	detailStyle := m.styles.Detail.Width(m.ui.width - 4)
 	content.WriteString(detailStyle.Render(m.statusMessage) + "\n\n")
 
 	// Instructions
-	helpStyle := lipgloss.NewStyle().
-		Foreground(lipgloss.Color("241")).
-		Italic(true)
+	content.WriteString(m.styles.Hint.Render("This error typically means:") + "\n")
+	content.WriteString(m.styles.Hint.Render("1. Missing required permissions in Azure DevOps") + "\n")
+	content.WriteString(m.styles.Hint.Render("2. Invalid area path or iteration path") + "\n")
+	content.WriteString(m.styles.Hint.Render("3. Work item type not allowed in this project") + "\n\n")
 
-	content.WriteString(helpStyle.Render("This error typically means:") + "\n")
-	content.WriteString(helpStyle.Render("1. Missing required permissions in Azure DevOps") + "\n")
-	content.WriteString(helpStyle.Render("2. Invalid area path or iteration path") + "\n")
-	content.WriteString(helpStyle.Render("3. Work item type not allowed in this project") + "\n\n")
-
-	content.WriteString(helpStyle.Render("Check your Azure DevOps permissions and project settings.") + "\n\n")
+	content.WriteString(m.styles.Hint.Render("Check your Azure DevOps permissions and project settings.") + "\n\n")
 
 	// Footer with keybindings
 	keybindings := "esc: back to list • q: quit"
@@ -218,27 +194,8 @@ func (m model) renderDeleteConfirmView() string {
 	// Title bar
 	content.WriteString(m.renderTitleBar("Delete Work Item"))
 
-	// Warning style
-	warningStyle := lipgloss.NewStyle().
-		Foreground(lipgloss.Color("196")).
-		Bold(true).
-		MarginBottom(1)
-
-	itemStyle := lipgloss.NewStyle().
-		Foreground(lipgloss.Color("230")).
-		Bold(true)
-
-	questionStyle := lipgloss.NewStyle().
-		Foreground(lipgloss.Color("230")).
-		MarginTop(1).
-		MarginBottom(1)
-
-	keyStyle := lipgloss.NewStyle().
-		Foreground(lipgloss.Color("86")).
-		Bold(true)
-
 	// Display the confirmation message
-	content.WriteString(warningStyle.Render("⚠ Warning: This action cannot be undone!") + "\n\n")
+	content.WriteString(m.styles.Warning.Render("⚠ Warning: This action cannot be undone!") + "\n\n")
 
 	// Check if batch delete or single delete
 	if len(m.batch.selectedItems) > 0 {
@@ -253,33 +210,31 @@ func (m model) renderDeleteConfirmView() string {
 		}
 
 		// List selected items (limit to 10 for readability)
-		listStyle := lipgloss.NewStyle().Foreground(lipgloss.Color("248"))
 		count := 0
-		maxDisplay := 10
 		for itemID := range m.batch.selectedItems {
-			if count >= maxDisplay {
-				remaining := len(m.batch.selectedItems) - maxDisplay
-				content.WriteString("  " + listStyle.Render(fmt.Sprintf("... and %d more", remaining)) + "\n")
+			if count >= 10 {
+				remaining := len(m.batch.selectedItems) - count
+				content.WriteString(m.styles.Dim.Render(fmt.Sprintf("  ... and %d more", remaining)) + "\n")
 				break
 			}
 			if task, ok := taskMap[itemID]; ok {
-				content.WriteString("  " + listStyle.Render(fmt.Sprintf("• #%d - %s", task.ID, task.Title)) + "\n")
+				content.WriteString(m.styles.Dim.Render(fmt.Sprintf("  • #%d - %s", itemID, task.Title)) + "\n")
 			} else {
-				content.WriteString("  " + listStyle.Render(fmt.Sprintf("• #%d", itemID)) + "\n")
+				content.WriteString(m.styles.Dim.Render(fmt.Sprintf("  • #%d", itemID)) + "\n")
 			}
 			count++
 		}
 
-		content.WriteString(questionStyle.Render("\nConfirm batch deletion?") + "\n\n")
+		content.WriteString(m.styles.Value.Render("\nConfirm batch deletion?") + "\n\n")
 	} else {
 		// Single delete
 		content.WriteString("Are you sure you want to delete this work item?\n\n")
-		content.WriteString("  " + itemStyle.Render(fmt.Sprintf("#%d - %s", m.delete.itemID, m.delete.itemTitle)) + "\n")
-		content.WriteString(questionStyle.Render("\nConfirm deletion?") + "\n\n")
+		content.WriteString("  " + m.styles.Value.Bold(true).Render(fmt.Sprintf("#%d - %s", m.delete.itemID, m.delete.itemTitle)) + "\n")
+		content.WriteString(m.styles.Value.Render("\nConfirm deletion?") + "\n\n")
 	}
 
-	content.WriteString("  " + keyStyle.Render("[y]") + " Yes, delete it\n")
-	content.WriteString("  " + keyStyle.Render("[n]") + " No, cancel\n\n")
+	content.WriteString("  " + m.styles.Key.Render("[y]") + " Yes, delete it\n")
+	content.WriteString("  " + m.styles.Key.Render("[n]") + " No, cancel\n\n")
 
 	// Footer with keybindings
 	keybindings := "y: confirm delete • n/esc: cancel"

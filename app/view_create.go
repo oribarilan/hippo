@@ -14,62 +14,14 @@ func (m model) renderCreateView() string {
 	title := "Create New Work Item"
 	content.WriteString(m.renderTitleBar(title))
 
-	selectedStyle := lipgloss.NewStyle().
-		Background(lipgloss.Color("62")).
-		Foreground(lipgloss.Color("230")).
-		Bold(true)
-
-	// State styles based on category
-	proposedStateStyle := lipgloss.NewStyle().
-		Foreground(lipgloss.Color("243")) // Normal gray
-
-	inProgressStateStyle := lipgloss.NewStyle().
-		Foreground(lipgloss.Color("86")). // Green
-		Bold(true)
-
-	completedStateStyle := lipgloss.NewStyle().
-		Foreground(lipgloss.Color("243")). // Dimmed gray
-		Italic(true)
-
-	removedStateStyle := lipgloss.NewStyle().
-		Foreground(lipgloss.Color("241")). // Very dim
-		Italic(true)
-
-	// Tree edge and icon styles
-	edgeStyle := lipgloss.NewStyle().Foreground(lipgloss.Color("63"))
-	iconStyle := lipgloss.NewStyle().Foreground(lipgloss.Color("212"))
-
-	// Mode and tab styles (reuse from list view)
-	activeModeStyle := lipgloss.NewStyle().
-		Bold(true).
-		Foreground(lipgloss.Color("230")).
-		Background(lipgloss.Color("62")).
-		Padding(0, 2).
-		MarginRight(1)
-
-	inactiveModeStyle := lipgloss.NewStyle().
-		Foreground(lipgloss.Color("241")).
-		Padding(0, 2).
-		MarginRight(1)
-
-	activeTabStyle := lipgloss.NewStyle().
-		Bold(true).
-		Foreground(lipgloss.Color("230")).
-		Background(lipgloss.Color("62")).
-		Padding(0, 2)
-
-	inactiveTabStyle := lipgloss.NewStyle().
-		Foreground(lipgloss.Color("241")).
-		Padding(0, 2)
-
 	// Render mode selector
 	modes := []string{}
 	if m.currentMode == sprintMode {
-		modes = append(modes, activeModeStyle.Render("[1] Sprint"))
-		modes = append(modes, inactiveModeStyle.Render("[2] Backlog"))
+		modes = append(modes, m.styles.ActiveMode.Render("[1] Sprint"))
+		modes = append(modes, m.styles.InactiveMode.Render("[2] Backlog"))
 	} else {
-		modes = append(modes, inactiveModeStyle.Render("[1] Sprint"))
-		modes = append(modes, activeModeStyle.Render("[2] Backlog"))
+		modes = append(modes, m.styles.InactiveMode.Render("[1] Sprint"))
+		modes = append(modes, m.styles.ActiveMode.Render("[2] Backlog"))
 	}
 	content.WriteString(lipgloss.JoinHorizontal(lipgloss.Top, modes...) + "\n\n")
 
@@ -82,9 +34,9 @@ func (m model) renderCreateView() string {
 			prevLabel = sprint.Name
 		}
 		if m.currentTab == previousSprint {
-			tabs = append(tabs, activeTabStyle.Render(prevLabel))
+			tabs = append(tabs, m.styles.ActiveTab.Render(prevLabel))
 		} else {
-			tabs = append(tabs, inactiveTabStyle.Render(prevLabel))
+			tabs = append(tabs, m.styles.InactiveTab.Render(prevLabel))
 		}
 
 		currLabel := "Current Sprint"
@@ -92,9 +44,9 @@ func (m model) renderCreateView() string {
 			currLabel = sprint.Name
 		}
 		if m.currentTab == currentSprint {
-			tabs = append(tabs, activeTabStyle.Render(currLabel))
+			tabs = append(tabs, m.styles.ActiveTab.Render(currLabel))
 		} else {
-			tabs = append(tabs, inactiveTabStyle.Render(currLabel))
+			tabs = append(tabs, m.styles.InactiveTab.Render(currLabel))
 		}
 
 		nextLabel := "Next Sprint"
@@ -102,21 +54,21 @@ func (m model) renderCreateView() string {
 			nextLabel = sprint.Name
 		}
 		if m.currentTab == nextSprint {
-			tabs = append(tabs, activeTabStyle.Render(nextLabel))
+			tabs = append(tabs, m.styles.ActiveTab.Render(nextLabel))
 		} else {
-			tabs = append(tabs, inactiveTabStyle.Render(nextLabel))
+			tabs = append(tabs, m.styles.InactiveTab.Render(nextLabel))
 		}
 	} else if m.currentMode == backlogMode {
 		if m.currentBacklogTab == recentBacklog {
-			tabs = append(tabs, activeTabStyle.Render("Recent Backlog"))
+			tabs = append(tabs, m.styles.ActiveTab.Render("Recent Backlog"))
 		} else {
-			tabs = append(tabs, inactiveTabStyle.Render("Recent Backlog"))
+			tabs = append(tabs, m.styles.InactiveTab.Render("Recent Backlog"))
 		}
 
 		if m.currentBacklogTab == abandonedWork {
-			tabs = append(tabs, activeTabStyle.Render("Abandoned Work"))
+			tabs = append(tabs, m.styles.ActiveTab.Render("Abandoned Work"))
 		} else {
-			tabs = append(tabs, inactiveTabStyle.Render("Abandoned Work"))
+			tabs = append(tabs, m.styles.InactiveTab.Render("Abandoned Work"))
 		}
 	}
 
@@ -124,23 +76,16 @@ func (m model) renderCreateView() string {
 
 	// Show tab hint
 	if hint := m.getTabHint(); hint != "" {
-		hintStyle := lipgloss.NewStyle().
-			Foreground(lipgloss.Color("241")).
-			Italic(true)
-		content.WriteString(hintStyle.Render(hint) + "\n\n")
+		content.WriteString(m.styles.Hint.Render(hint) + "\n\n")
 	}
 
 	if m.statusMessage != "" {
-		msgStyle := lipgloss.NewStyle().Foreground(lipgloss.Color("86"))
-		content.WriteString(msgStyle.Render(m.statusMessage) + "\n\n")
+		content.WriteString(m.styles.StatusMsg.Render(m.statusMessage) + "\n\n")
 	}
 
 	// Show loader if creating
 	if m.loading {
-		loaderStyle := lipgloss.NewStyle().
-			Foreground(lipgloss.Color("86")).
-			MarginLeft(2)
-		content.WriteString(loaderStyle.Render(fmt.Sprintf("%s %s", m.spinner.View(), m.statusMessage)) + "\n\n")
+		content.WriteString(m.styles.Loader.Render(fmt.Sprintf("%s %s", m.spinner.View(), m.statusMessage)) + "\n\n")
 
 		// Footer with keybindings
 		keybindings := "Creating work item..."
@@ -196,13 +141,13 @@ func (m model) renderCreateView() string {
 				}
 			}
 
-			prefixStr := edgeStyle.Render(prefix.String())
+			prefixStr := m.styles.TreeEdge.Render(prefix.String())
 
 			// Build the create line
 			var createLine strings.Builder
 			createLine.WriteString(prefixStr)
-			createLine.WriteString(iconStyle.Render("✓ "))
-			createLine.WriteString(selectedStyle.Render("[New] "))
+			createLine.WriteString(m.styles.Icon.Render("✓ "))
+			createLine.WriteString(m.styles.Selected.Render("[New] "))
 			createLine.WriteString(m.create.input.View())
 
 			content.WriteString(createLine.String() + "\n")
@@ -227,24 +172,12 @@ func (m model) renderCreateView() string {
 
 			// Get state style
 			category := m.getStateCategory(task.State)
-			var stateStyle lipgloss.Style
-			switch category {
-			case "Proposed":
-				stateStyle = proposedStateStyle
-			case "InProgress":
-				stateStyle = inProgressStateStyle
-			case "Completed":
-				stateStyle = completedStateStyle
-			case "Removed":
-				stateStyle = removedStateStyle
-			default:
-				stateStyle = proposedStateStyle
-			}
+			stateStyle := m.styles.GetStateStyle(category, false)
 
 			// Build the line
 			var line strings.Builder
-			line.WriteString(edgeStyle.Render(treePrefix))
-			line.WriteString(iconStyle.Render(icon + " "))
+			line.WriteString(m.styles.TreeEdge.Render(treePrefix))
+			line.WriteString(m.styles.Icon.Render(icon + " "))
 			line.WriteString(stateStyle.Render(fmt.Sprintf("[%s] ", task.State)))
 			line.WriteString(stateStyle.Render(fmt.Sprintf("#%d - %s", task.ID, task.Title)))
 
@@ -254,10 +187,7 @@ func (m model) renderCreateView() string {
 			// "Load More" item
 			remaining := m.getRemainingCount()
 			loadMoreText := fmt.Sprintf("▼ Load %d more items...", remaining)
-			loadMoreStyle := lipgloss.NewStyle().
-				Foreground(lipgloss.Color("86")).
-				Italic(true)
-			content.WriteString("  " + loadMoreStyle.Render(loadMoreText) + "\n")
+			content.WriteString("  " + m.styles.LoadMore.Render(loadMoreText) + "\n")
 			visibleIdx++
 		}
 	}
