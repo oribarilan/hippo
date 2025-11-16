@@ -4,6 +4,12 @@ Quick reference for agents working on the Hippo codebase.
 
 ## Build/Run/Test
 
+All commands should be run from the `app/` directory:
+
+```bash
+cd app
+```
+
 - **Build:** `go build -o hippo` or `go build`
 - **Run:** `go run .` or `./hippo`
 - **Format:** `go fmt ./...` (required before commits)
@@ -20,6 +26,24 @@ Quick reference for agents working on the Hippo codebase.
 **Comments:** Exported functions need doc comments starting with function name
 **Constants:** Group in `const ()` blocks
 **Receivers:** Use consistent names (e.g., `m` for `model`)
+
+## File Organization Principle
+
+**Keep files simple with clear single responsibility.**
+
+When working on this codebase:
+- Each file should have ONE clear purpose
+- Split large files into smaller, focused modules
+- Extract related functionality into separate files
+- Name files clearly to reflect their single responsibility
+- Avoid creating monolithic files that do multiple things
+
+Examples:
+- `client_*.go` - Each client file handles a specific API domain
+- `model.go` - Data structures only
+- `views.go` - View rendering logic
+- `handlers.go` - Request handlers
+- `styles.go` - Styling/colors
 
 ## Architecture Basics
 
@@ -63,6 +87,8 @@ func (m model) renderSomeView() string {
 
 **Running Tests:**
 ```bash
+cd app
+
 # Run all tests with verbose output
 go test -v
 
