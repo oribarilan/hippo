@@ -7,7 +7,7 @@ const (
 	ColorPurple      = "62"
 	ColorWhite       = "230"
 	ColorGray        = "241"
-	ColorLightGray   = "248"
+	ColorLightGray   = "251"
 	ColorDimGray     = "243"
 	ColorVeryDim     = "241"
 	ColorGreen       = "86"
@@ -152,7 +152,7 @@ func NewStyles() Styles {
 			MarginRight(1),
 
 		InactiveMode: lipgloss.NewStyle().
-			Foreground(lipgloss.Color(ColorGray)).
+			Foreground(lipgloss.Color("245")).
 			Padding(0, 2).
 			MarginRight(1),
 
@@ -163,12 +163,12 @@ func NewStyles() Styles {
 			Padding(0, 2),
 
 		InactiveTab: lipgloss.NewStyle().
-			Foreground(lipgloss.Color(ColorGray)).
+			Foreground(lipgloss.Color("245")).
 			Padding(0, 2),
 
 		// UI elements
 		Hint: lipgloss.NewStyle().
-			Foreground(lipgloss.Color(ColorGray)).
+			Foreground(lipgloss.Color(ColorLightGray)).
 			Italic(true),
 
 		StatusMsg: lipgloss.NewStyle().
@@ -188,13 +188,13 @@ func NewStyles() Styles {
 
 		// Help and messages
 		Help: lipgloss.NewStyle().
-			Foreground(lipgloss.Color(ColorGray)),
+			Foreground(lipgloss.Color("245")),
 
 		Separator: lipgloss.NewStyle().
-			Foreground(lipgloss.Color(ColorGray)),
+			Foreground(lipgloss.Color("245")),
 
 		Log: lipgloss.NewStyle().
-			Foreground(lipgloss.Color(ColorGray)).
+			Foreground(lipgloss.Color("245")).
 			Italic(true),
 
 		// Detail view
