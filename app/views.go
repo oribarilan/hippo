@@ -77,7 +77,7 @@ func (m model) renderLoadingScreen() string {
 	// Calculate vertical centering
 	artLines := strings.Split(hippoArt, "\n")
 	totalHeight := 3 + len(artLines) // spinner line + blank + art
-	verticalPadding := (m.height - totalHeight) / 2
+	verticalPadding := (m.ui.height - totalHeight) / 2
 	if verticalPadding < 0 {
 		verticalPadding = 0
 	}
@@ -86,13 +86,13 @@ func (m model) renderLoadingScreen() string {
 	titleStyle := lipgloss.NewStyle().
 		Foreground(lipgloss.Color("212")).
 		Bold(true).
-		Width(m.width).
+		Width(m.ui.width).
 		Align(lipgloss.Center)
 
 	// Style the ASCII art
 	artStyle := lipgloss.NewStyle().
 		Foreground(lipgloss.Color("212")).
-		Width(m.width).
+		Width(m.ui.width).
 		Align(lipgloss.Center)
 
 	// Build the centered content
@@ -134,12 +134,12 @@ func (m model) renderTitleBar(title string) string {
 		Background(lipgloss.Color(ColorPurple)).
 		Foreground(lipgloss.Color(ColorWhite)).
 		Bold(true).
-		Width(m.width).
+		Width(m.ui.width).
 		Padding(0, 1)
 
 	// Calculate padding to align version to the right
 	versionText := version
-	availableWidth := m.width - len(title) - len(versionText) - 4 // 4 for padding (2 on each side)
+	availableWidth := m.ui.width - len(title) - len(versionText) - 4 // 4 for padding (2 on each side)
 	if availableWidth < 0 {
 		availableWidth = 0
 	}
@@ -160,8 +160,8 @@ func (m model) renderFooter(keybindings string) string {
 	}
 
 	// Separator line
-	separatorStyle := m.styles.Separator.Width(m.width)
-	separator := separatorStyle.Render(strings.Repeat("─", m.width))
+	separatorStyle := m.styles.Separator.Width(m.ui.width)
+	separator := separatorStyle.Render(strings.Repeat("─", m.ui.width))
 
 	footer.WriteString(separator + "\n")
 	footer.WriteString(m.styles.Help.Render(keybindings))

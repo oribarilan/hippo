@@ -153,12 +153,12 @@ func (m model) renderCreateView() string {
 
 	// Calculate visible range based on scroll offset
 	contentHeight := m.getContentHeight()
-	startIdx := m.scrollOffset
-	endIdx := m.scrollOffset + contentHeight
+	startIdx := m.ui.scrollOffset
+	endIdx := m.ui.scrollOffset + contentHeight
 
 	// Total items including the create input line
 	totalItems := len(treeItems)
-	if m.createInsertPos <= len(treeItems) {
+	if m.create.insertPos <= len(treeItems) {
 		totalItems++
 	}
 	if m.hasMoreItems() {
@@ -174,13 +174,13 @@ func (m model) renderCreateView() string {
 	visibleIdx := 0
 	for i := startIdx; i < endIdx; i++ {
 		// Check if we should render the create input at this position
-		if i == m.createInsertPos {
+		if i == m.create.insertPos {
 			// Render the create input line with tree prefix
 			var prefix strings.Builder
 
 			// Draw tree prefix based on depth
-			for d := 0; d < m.createDepth-1; d++ {
-				if d < len(m.createIsLast) && m.createIsLast[d] {
+			for d := 0; d < m.create.depth-1; d++ {
+				if d < len(m.create.isLast) && m.create.isLast[d] {
 					prefix.WriteString("    ")
 				} else {
 					prefix.WriteString("│   ")
@@ -188,8 +188,8 @@ func (m model) renderCreateView() string {
 			}
 
 			// Draw connector for this item
-			if m.createDepth > 0 {
-				if len(m.createIsLast) > 0 && m.createIsLast[len(m.createIsLast)-1] {
+			if m.create.depth > 0 {
+				if len(m.create.isLast) > 0 && m.create.isLast[len(m.create.isLast)-1] {
 					prefix.WriteString("╰── ")
 				} else {
 					prefix.WriteString("├── ")
@@ -203,7 +203,7 @@ func (m model) renderCreateView() string {
 			createLine.WriteString(prefixStr)
 			createLine.WriteString(iconStyle.Render("✓ "))
 			createLine.WriteString(selectedStyle.Render("[New] "))
-			createLine.WriteString(m.createInput.View())
+			createLine.WriteString(m.create.input.View())
 
 			content.WriteString(createLine.String() + "\n")
 			visibleIdx++
@@ -212,7 +212,7 @@ func (m model) renderCreateView() string {
 
 		// Calculate actual tree item index (accounting for inserted create line)
 		treeIdx := i
-		if i > m.createInsertPos {
+		if i > m.create.insertPos {
 			treeIdx = i - 1
 		}
 

@@ -59,14 +59,58 @@ type Sprint struct {
 	EndDate   string
 }
 
+// UIState contains all UI-related state (cursor, scroll, dimensions)
+type UIState struct {
+	cursor        int
+	scrollOffset  int
+	width         int // Terminal width
+	height        int // Terminal height
+	viewportReady bool
+}
+
+// EditState contains all state for edit mode
+type EditState struct {
+	titleInput       textinput.Model
+	descriptionInput textarea.Model
+	fieldCursor      int // Which field is currently focused (0=title, 1=description)
+	fieldCount       int // Total number of editable fields
+}
+
+// CreateState contains all state for create mode
+type CreateState struct {
+	input         textinput.Model
+	insertPos     int    // Position in tree to insert
+	after         bool   // true='a', false='i'
+	parentID      *int   // nil=parent level, int=child of parent
+	depth         int    // Tree depth for rendering
+	isLast        []bool // Tree prefix info for rendering
+	createdItemID int    // Track newly created item for cursor jump
+}
+
+// DeleteState contains all state for delete confirmation
+type DeleteState struct {
+	itemID    int    // ID of item to delete
+	itemTitle string // Title of item to delete (for confirmation message)
+}
+
+// BatchState contains state for batch operations
+type BatchState struct {
+	selectedItems  map[int]bool // Set of selected work item IDs
+	operationCount int          // Track pending batch operations
+}
+
+// FilterState contains state for filtering and finding
+type FilterState struct {
+	filteredTasks []WorkItem
+	active        bool
+	filterInput   textinput.Model
+	findInput     textinput.Model
+}
+
 type model struct {
 	// WorkItemList instances - component-based architecture
 	sprintLists  map[sprintTab]*WorkItemList
 	backlogLists map[backlogTab]*WorkItemList
-
-	// Temporary filter state for backward compatibility
-	filteredTasks []WorkItem
-	filterActive  bool
 
 	// Core UI state
 	state             viewState
@@ -77,10 +121,7 @@ type model struct {
 	err               error
 	client            *AzureDevOpsClient
 	spinner           spinner.Model
-	filterInput       textinput.Model
-	findInput         textinput.Model
 	viewport          viewport.Model
-	viewportReady     bool
 	stateCursor       int
 	availableStates   []string
 	stateCategories   map[string]string // Map of state name to category (Proposed, InProgress, Completed, etc.)
@@ -94,30 +135,15 @@ type model struct {
 	currentBacklogTab backlogTab
 	sprints           map[sprintTab]*Sprint
 	initialLoading    int // Count of initial sprint loads pending
-	width             int // Terminal width
-	height            int // Terminal height
-	// Cursor and scroll are synchronized with current WorkItemList
-	cursor       int
-	scrollOffset int
-	// Edit mode fields
-	editTitleInput       textinput.Model
-	editDescriptionInput textarea.Model
-	editFieldCursor      int // Which field is currently focused (0=title, 1=description)
-	editFieldCount       int // Total number of editable fields
-	// Create mode fields
-	createInput     textinput.Model
-	createInsertPos int    // Position in tree to insert
-	createAfter     bool   // true='a', false='i'
-	createParentID  *int   // nil=parent level, int=child of parent
-	createDepth     int    // Tree depth for rendering
-	createIsLast    []bool // Tree prefix info for rendering
-	createdItemID   int    // Track newly created item for cursor jump
-	// Delete mode fields
-	deleteItemID    int    // ID of item to delete
-	deleteItemTitle string // Title of item to delete (for confirmation message)
-	// Batch selection fields
-	selectedItems       map[int]bool // Set of selected work item IDs
-	batchOperationCount int          // Track pending batch operations
+
+	// Grouped state
+	ui     UIState
+	edit   EditState
+	create CreateState
+	delete DeleteState
+	batch  BatchState
+	filter FilterState
+
 	// UI styles
 	styles Styles // Centralized styles for the application
 }

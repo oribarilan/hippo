@@ -13,14 +13,14 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	switch msg := msg.(type) {
 	case tea.WindowSizeMsg:
 		// Store window dimensions
-		m.width = msg.Width
-		m.height = msg.Height
+		m.ui.width = msg.Width
+		m.ui.height = msg.Height
 
 		// Initialize viewport when we know the window size
-		if !m.viewportReady {
+		if !m.ui.viewportReady {
 			m.viewport = viewport.New(msg.Width, msg.Height-5) // Reserve space for header/footer
 			m.viewport.YPosition = 0
-			m.viewportReady = true
+			m.ui.viewportReady = true
 		} else {
 			m.viewport.Width = msg.Width
 			m.viewport.Height = msg.Height - 5

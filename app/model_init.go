@@ -15,6 +15,7 @@ func initialModel() model {
 	s.Spinner = spinner.Line
 	s.Style = lipgloss.NewStyle().Foreground(lipgloss.Color("205"))
 
+	// Filter state inputs
 	filterInput := textinput.New()
 	filterInput.Placeholder = "Filter by title or ID..."
 	filterInput.Focus()
@@ -35,6 +36,7 @@ func initialModel() model {
 	editDescriptionInput.SetWidth(80)
 	editDescriptionInput.SetHeight(10)
 
+	// Create mode input
 	createInput := textinput.New()
 	createInput.Placeholder = "Enter task title..."
 	createInput.CharLimit = 255
@@ -45,30 +47,42 @@ func initialModel() model {
 		sprintLists:  make(map[sprintTab]*WorkItemList),
 		backlogLists: make(map[backlogTab]*WorkItemList),
 
-		// UI state fields
-		filteredTasks:        []WorkItem{},
-		cursor:               0,
-		scrollOffset:         0,
-		state:                loadingView,
-		loading:              true,
-		spinner:              s,
-		filterInput:          filterInput,
-		findInput:            findInput,
-		availableStates:      []string{"New", "Active", "Closed", "Removed"},
-		stateCategories:      make(map[string]string),
-		organizationURL:      os.Getenv("AZURE_DEVOPS_ORG_URL"),
-		projectName:          os.Getenv("AZURE_DEVOPS_PROJECT"),
-		currentMode:          sprintMode,
-		currentTab:           currentSprint,
-		currentBacklogTab:    recentBacklog,
-		sprints:              make(map[sprintTab]*Sprint),
-		editTitleInput:       editTitleInput,
-		editDescriptionInput: editDescriptionInput,
-		editFieldCursor:      0,
-		editFieldCount:       2, // Title and Description only
-		createInput:          createInput,
-		selectedItems:        make(map[int]bool),
-		styles:               NewStyles(),
+		// Core state fields
+		state:             loadingView,
+		loading:           true,
+		spinner:           s,
+		availableStates:   []string{"New", "Active", "Closed", "Removed"},
+		stateCategories:   make(map[string]string),
+		organizationURL:   os.Getenv("AZURE_DEVOPS_ORG_URL"),
+		projectName:       os.Getenv("AZURE_DEVOPS_PROJECT"),
+		currentMode:       sprintMode,
+		currentTab:        currentSprint,
+		currentBacklogTab: recentBacklog,
+		sprints:           make(map[sprintTab]*Sprint),
+		styles:            NewStyles(),
+
+		// Grouped state initialization
+		ui: UIState{
+			cursor:       0,
+			scrollOffset: 0,
+		},
+		edit: EditState{
+			titleInput:       editTitleInput,
+			descriptionInput: editDescriptionInput,
+			fieldCursor:      0,
+			fieldCount:       2, // Title and Description only
+		},
+		create: CreateState{
+			input: createInput,
+		},
+		batch: BatchState{
+			selectedItems: make(map[int]bool),
+		},
+		filter: FilterState{
+			filteredTasks: []WorkItem{},
+			filterInput:   filterInput,
+			findInput:     findInput,
+		},
 	}
 }
 

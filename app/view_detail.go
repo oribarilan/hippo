@@ -68,17 +68,17 @@ func (m model) renderEditView() string {
 	}
 
 	// Title field
-	content.WriteString(sectionStyle.Render(labelStyle.Render("Title:") + "\n" + m.editTitleInput.View()))
+	content.WriteString(sectionStyle.Render(labelStyle.Render("Title:") + "\n" + m.edit.titleInput.View()))
 	content.WriteString("\n")
-	if m.editFieldCursor == 0 {
+	if m.edit.fieldCursor == 0 {
 		content.WriteString(helpStyle.Render("  Enter the work item title") + "\n")
 	}
 	content.WriteString("\n")
 
 	// Description field
-	content.WriteString(sectionStyle.Render(labelStyle.Render("Description:") + "\n" + m.editDescriptionInput.View()))
+	content.WriteString(sectionStyle.Render(labelStyle.Render("Description:") + "\n" + m.edit.descriptionInput.View()))
 	content.WriteString("\n")
-	if m.editFieldCursor == 1 {
+	if m.edit.fieldCursor == 1 {
 		content.WriteString(helpStyle.Render("  Multi-line text editor (HTML will be stripped)") + "\n")
 	}
 	content.WriteString("\n")

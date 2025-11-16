@@ -63,7 +63,7 @@ func (m *model) setCurrentTasks(tasks []WorkItem) {
 
 // filterSearch performs filtering on the current list based on filter input
 func (m *model) filterSearch() {
-	query := strings.ToLower(m.filterInput.Value())
+	query := strings.ToLower(m.filter.filterInput.Value())
 	list := m.getCurrentList()
 	if list == nil {
 		return
@@ -73,7 +73,7 @@ func (m *model) filterSearch() {
 		list.filteredTasks = nil
 		list.filterActive = false
 		// Also sync model-level filter state
-		m.filteredTasks = nil
+		m.filter.filteredTasks = nil
 		// Invalidate cache when filter is cleared
 		list.invalidateTreeCache()
 		return
@@ -89,7 +89,7 @@ func (m *model) filterSearch() {
 	list.filteredTasks = filtered
 	list.filterActive = true
 	// Also sync model-level filter state for backward compatibility
-	m.filteredTasks = filtered
+	m.filter.filteredTasks = filtered
 	// Invalidate cache when filter changes
 	list.invalidateTreeCache()
 }
@@ -221,7 +221,7 @@ func (m model) getContentHeight() int {
 		fixedHeight += 2
 	}
 
-	contentHeight := m.height - fixedHeight
+	contentHeight := m.ui.height - fixedHeight
 	if contentHeight < 5 {
 		contentHeight = 5 // Minimum content height
 	}
@@ -234,17 +234,17 @@ func (m *model) adjustScrollOffset() {
 	contentHeight := m.getContentHeight()
 
 	// Ensure cursor is within visible area
-	if m.cursor < m.scrollOffset {
+	if m.ui.cursor < m.ui.scrollOffset {
 		// Cursor moved above visible area, scroll up
-		m.scrollOffset = m.cursor
-	} else if m.cursor >= m.scrollOffset+contentHeight {
+		m.ui.scrollOffset = m.ui.cursor
+	} else if m.ui.cursor >= m.ui.scrollOffset+contentHeight {
 		// Cursor moved below visible area, scroll down
-		m.scrollOffset = m.cursor - contentHeight + 1
+		m.ui.scrollOffset = m.ui.cursor - contentHeight + 1
 	}
 
 	// Ensure scroll offset is never negative
-	if m.scrollOffset < 0 {
-		m.scrollOffset = 0
+	if m.ui.scrollOffset < 0 {
+		m.ui.scrollOffset = 0
 	}
 }
 
@@ -306,7 +306,7 @@ func (m model) buildDetailContent() string {
 	task := m.selectedTask
 
 	// Use card style with dynamic width
-	cardStyle := m.styles.Card.Width(m.width - 4)
+	cardStyle := m.styles.Card.Width(m.ui.width - 4)
 
 	// Build the card content
 	var cardContent strings.Builder
@@ -414,14 +414,14 @@ func (m *model) setActionLog(message string) {
 // focusEditField focuses the appropriate edit field based on editFieldCursor
 func (m *model) focusEditField() {
 	// Blur all fields first
-	m.editTitleInput.Blur()
-	m.editDescriptionInput.Blur()
+	m.edit.titleInput.Blur()
+	m.edit.descriptionInput.Blur()
 
 	// Focus the selected field
-	switch m.editFieldCursor {
+	switch m.edit.fieldCursor {
 	case 0:
-		m.editTitleInput.Focus()
+		m.edit.titleInput.Focus()
 	case 1:
-		m.editDescriptionInput.Focus()
+		m.edit.descriptionInput.Focus()
 	}
 }

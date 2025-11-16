@@ -51,14 +51,14 @@ func (m model) renderFilterView() string {
 	// Title bar
 	titleText := "Filter"
 	content.WriteString(m.renderTitleBar(titleText))
-	content.WriteString(m.filterInput.View() + "\n\n")
+	content.WriteString(m.filter.filterInput.View() + "\n\n")
 
 	treeItems := m.getVisibleTreeItems()
 	resultCount := len(treeItems)
 
 	// Show result count
 	currentTasks := m.getCurrentTasks()
-	if m.filterInput.Value() != "" {
+	if m.filter.filterInput.Value() != "" {
 		content.WriteString(m.styles.Dim.Render(fmt.Sprintf("  %d/%d", resultCount, len(currentTasks))) + "\n\n")
 	} else {
 		content.WriteString(m.styles.Dim.Render(fmt.Sprintf("  %d items", len(currentTasks))) + "\n\n")
@@ -70,14 +70,14 @@ func (m model) renderFilterView() string {
 	endIdx := min(resultCount, maxVisible)
 
 	// Adjust visible window if cursor is out of view
-	if m.cursor >= maxVisible {
-		startIdx = m.cursor - maxVisible + 1
-		endIdx = m.cursor + 1
+	if m.ui.cursor >= maxVisible {
+		startIdx = m.ui.cursor - maxVisible + 1
+		endIdx = m.ui.cursor + 1
 	}
 
 	for i := startIdx; i < endIdx && i < resultCount; i++ {
 		treeItem := treeItems[i]
-		isSelected := m.cursor == i
+		isSelected := m.ui.cursor == i
 
 		cursor := "  "
 		if isSelected {
@@ -157,7 +157,7 @@ func (m model) renderFindView() string {
 	// Title bar
 	titleText := "Find Work Items"
 	content.WriteString(m.renderTitleBar(titleText))
-	content.WriteString(m.findInput.View() + "\n\n")
+	content.WriteString(m.filter.findInput.View() + "\n\n")
 
 	// Note about query behavior
 	noteStyle := lipgloss.NewStyle().
@@ -186,7 +186,7 @@ func (m model) renderErrorView() string {
 
 	detailStyle := lipgloss.NewStyle().
 		Foreground(lipgloss.Color("230")).
-		Width(m.width - 4).
+		Width(m.ui.width - 4).
 		PaddingLeft(2)
 
 	// Display the error
@@ -241,9 +241,9 @@ func (m model) renderDeleteConfirmView() string {
 	content.WriteString(warningStyle.Render("⚠ Warning: This action cannot be undone!") + "\n\n")
 
 	// Check if batch delete or single delete
-	if len(m.selectedItems) > 0 {
+	if len(m.batch.selectedItems) > 0 {
 		// Batch delete - show list of items
-		content.WriteString(fmt.Sprintf("Are you sure you want to delete %d work items?\n\n", len(m.selectedItems)))
+		content.WriteString(fmt.Sprintf("Are you sure you want to delete %d work items?\n\n", len(m.batch.selectedItems)))
 
 		// Get current tasks and show titles of selected items
 		currentTasks := m.getCurrentTasks()
@@ -256,9 +256,9 @@ func (m model) renderDeleteConfirmView() string {
 		listStyle := lipgloss.NewStyle().Foreground(lipgloss.Color("248"))
 		count := 0
 		maxDisplay := 10
-		for itemID := range m.selectedItems {
+		for itemID := range m.batch.selectedItems {
 			if count >= maxDisplay {
-				remaining := len(m.selectedItems) - maxDisplay
+				remaining := len(m.batch.selectedItems) - maxDisplay
 				content.WriteString("  " + listStyle.Render(fmt.Sprintf("... and %d more", remaining)) + "\n")
 				break
 			}
@@ -274,7 +274,7 @@ func (m model) renderDeleteConfirmView() string {
 	} else {
 		// Single delete
 		content.WriteString("Are you sure you want to delete this work item?\n\n")
-		content.WriteString("  " + itemStyle.Render(fmt.Sprintf("#%d - %s", m.deleteItemID, m.deleteItemTitle)) + "\n")
+		content.WriteString("  " + itemStyle.Render(fmt.Sprintf("#%d - %s", m.delete.itemID, m.delete.itemTitle)) + "\n")
 		content.WriteString(questionStyle.Render("\nConfirm deletion?") + "\n\n")
 	}
 

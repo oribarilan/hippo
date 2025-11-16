@@ -24,31 +24,54 @@ Based on analysis of the codebase structure and AGENTS.md principles, here are t
 
 ---
 
-## Pending Refactorings
+### ✅ #2. Break down large view rendering functions (HIGH PRIORITY)
 
-### 🔥 #2. Break down large view rendering functions (HIGH PRIORITY)
-
-**Problem:** `views.go` (1134 lines) has several massive rendering functions:
+**Problem:** `views.go` (1,134 lines) had several massive rendering functions:
 - `renderListView()` (236 lines: 172-408)
 - `renderCreateView()` (119 lines: 738-998)
 - `renderHelpView()` (76 lines: 597-674)
+- Plus modal views (state picker, filter, find, error, delete confirm)
 
-**Recommendation:** Extract into smaller, focused files:
-- `view_list.go` - List view rendering with helper functions for tabs, modes, items
-- `view_create.go` - Create view rendering
-- `view_help.go` - Help view rendering
-- `view_detail.go` - Detail view rendering
-- `view_modals.go` - State picker, filter, find, error, delete confirm views
-- Keep only the main `View()` dispatcher in `views.go`
+**Solution Implemented:**
+- ✅ `view_list.go` (~270 lines) - List view with tabs, modes, and tree rendering
+- ✅ `view_create.go` (~280 lines) - Create view with inline item insertion
+- ✅ `view_detail.go` (~95 lines) - Detail view and edit view rendering
+- ✅ `view_help.go` (~90 lines) - Keybindings help screen
+- ✅ `view_modals.go` (~300 lines) - All modal views (state picker, filter, find, error, delete confirm)
+- ✅ `views.go` (~200 lines) - View() dispatcher and shared helpers (title bar, footer, loading screen, openInBrowser)
 
-**Benefits:**
-- Easier to find and modify specific view logic
-- Smaller files are easier to test and reason about
-- Reduces cognitive load when working on UI
+**Result:** Reduced views.go from 1,134 lines to ~200 lines. Split into 6 focused files, each with a clear single responsibility.
 
 ---
 
-### 🔥 #3. Consolidate message handlers (MEDIUM PRIORITY)
+### ✅ #5. Simplify model state management (MEDIUM PRIORITY)
+
+**Problem:** The `model` struct had 40+ fields mixing different concerns:
+- List management (sprintLists, backlogLists)
+- UI state (cursor, scrollOffset, width, height)
+- Temporary state (filteredTasks, filterActive)
+- Edit mode fields
+- Create mode fields
+- Delete mode fields
+
+**Solution Implemented:**
+- ✅ Created `UIState` struct - cursor, scrollOffset, width, height, viewportReady
+- ✅ Created `EditState` struct - titleInput, descriptionInput, fieldCursor, fieldCount
+- ✅ Created `CreateState` struct - input, insertPos, after, parentID, depth, isLast, createdItemID
+- ✅ Created `DeleteState` struct - itemID, itemTitle
+- ✅ Created `BatchState` struct - selectedItems, operationCount
+- ✅ Created `FilterState` struct - filteredTasks, active, filterInput, findInput
+- ✅ Updated all 10 Go files with ~280+ field references to use new sub-struct organization
+
+**Result:** Model struct now has clear separation of concerns with grouped state. Much easier to understand what state belongs where and pass relevant state to functions.
+
+---
+
+## Pending Refactorings
+
+---
+
+### 🔥 #3. Consolidate message handlers (MEDIUM PRIORITY) - NEXT UP
 
 **Problem:** `handlers.go` (1189 lines) is the largest file and mixes concerns:
 - Key input handlers (lines 10-360)
@@ -67,7 +90,7 @@ Based on analysis of the codebase structure and AGENTS.md principles, here are t
 
 ---
 
-### 🟡 #4. Extract tree rendering logic (MEDIUM PRIORITY)
+### 🟡 #4. Extract tree rendering logic (LOW PRIORITY)
 
 **Problem:** Tree prefix logic is scattered across multiple view renderers with duplicated styling code (e.g., in `renderListView`, `renderFilterView`, `renderCreateView`).
 
@@ -82,58 +105,36 @@ Based on analysis of the codebase structure and AGENTS.md principles, here are t
 - Consistent styling across all views
 - Easier to modify tree rendering behavior
 
----
-
-### 🟡 #5. Simplify model state management (MEDIUM PRIORITY)
-
-**Problem:** The `model` struct (lines 62-128 in types.go) has 40+ fields mixing different concerns:
-- List management (sprintLists, backlogLists)
-- UI state (cursor, scrollOffset, width, height)
-- Temporary state (filteredTasks, filterActive)
-- Edit mode fields
-- Create mode fields
-- Delete mode fields
-
-**Recommendation:** Group related fields into sub-structs:
-```go
-type model struct {
-    // Core data
-    lists    *ListManager
-    client   *AzureDevOpsClient
-    
-    // UI state
-    ui       UIState
-    
-    // Mode-specific state
-    edit     EditState
-    create   CreateState
-    delete   DeleteState
-    
-    // Styles
-    styles   Styles
-}
-```
-
-**Benefits:**
-- Clearer organization of state
-- Easier to pass relevant state to functions
-- Better encapsulation of mode-specific data
+**Note:** This is a polish refactor - tree rendering currently works well, so this is lower priority.
 
 ---
 
 ## Quick Wins (Low Effort, High Value)
 
-1. **Extract constants** - Lines from types.go should be in `constants.go`
-2. **Move helper functions** - `openInBrowser()` (lines 1117-1134 in views.go) should be in `browser.go` or extend `utils.go`
-3. **Consolidate style definitions** - Already have `styles.go`, but style creation is scattered in view files
+1. **Extract constants** - Move constants from types.go to `constants.go` (version, defaultLoadLimit, etc.)
+2. **Move helper functions** - Move `openInBrowser()` from views.go to `utils.go`
+3. **Consolidate style definitions** - Move inline style creation from view files into `styles.go`
+
+---
+
+## Progress Summary
+
+### Completed (3/5 major refactorings):
+- ✅ #1: Split main.go into focused modules
+- ✅ #2: Break down large view rendering functions
+- ✅ #5: Simplify model state management
+
+### Next Up:
+- 🔥 #3: Consolidate message handlers (handlers.go split)
+- 🟡 #4: Extract tree rendering logic (optional polish)
 
 ---
 
 ## Recommended Order
 
 1. ✅ **#1** (split main.go) - Completed ✓
-2. **#2** (views refactor) - Biggest file size reduction, improves maintainability
-3. **#5** (model refactor) - Makes everything else clearer
+2. ✅ **#2** (views refactor) - Completed ✓ - Biggest file size reduction, improves maintainability
+3. ✅ **#5** (model refactor) - Completed ✓ - Makes everything else clearer
 4. **#3** (handlers) - Completes the core refactoring
 5. **#4** (tree rendering) - Polish and DRY
 

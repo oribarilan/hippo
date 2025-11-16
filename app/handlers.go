@@ -37,69 +37,69 @@ func (m model) handleFilterView(msg tea.KeyMsg) (model, tea.Cmd) {
 	switch msg.String() {
 	case "esc":
 		m.state = listView
-		m.filterActive = false
-		m.filterInput.SetValue("")
+		m.filter.active = false
+		m.filter.filterInput.SetValue("")
 		// Clear filter in current list
 		if list := m.getCurrentList(); list != nil {
 			list.filterActive = false
 			list.filteredTasks = nil
 		}
-		m.filteredTasks = nil
-		m.cursor = 0
+		m.filter.filteredTasks = nil
+		m.ui.cursor = 0
 		return m, nil
 	case "enter":
 		// If there are results, open the selected item in detail view
-		if len(m.filteredTasks) > 0 && m.cursor < len(m.filteredTasks) {
+		if len(m.filter.filteredTasks) > 0 && m.ui.cursor < len(m.filter.filteredTasks) {
 			// Get the filtered tasks as tree items to respect the cursor position
 			visibleTasks := m.getVisibleTasks()
-			if len(visibleTasks) > 0 && m.cursor < len(visibleTasks) {
+			if len(visibleTasks) > 0 && m.ui.cursor < len(visibleTasks) {
 				treeItems := m.getVisibleTreeItems()
-				if m.cursor < len(treeItems) {
-					m.selectedTask = treeItems[m.cursor].WorkItem
+				if m.ui.cursor < len(treeItems) {
+					m.selectedTask = treeItems[m.ui.cursor].WorkItem
 					m.selectedTaskID = m.selectedTask.ID
 					m.state = detailView
-					m.filterActive = true
+					m.filter.active = true
 				}
 			}
 		} else {
 			// Just close filter and keep filter active
 			m.state = listView
-			m.filterActive = true
-			m.cursor = 0
+			m.filter.active = true
+			m.ui.cursor = 0
 		}
 		return m, nil
 	case "up", "ctrl+k", "ctrl+p":
 		// Navigate up in filtered results
-		if m.cursor > 0 {
-			m.cursor--
+		if m.ui.cursor > 0 {
+			m.ui.cursor--
 			m.adjustScrollOffset()
 		}
 		return m, nil
 	case "down", "ctrl+j", "ctrl+n":
 		// Navigate down in filtered results
 		treeItems := m.getVisibleTreeItems()
-		if m.cursor < len(treeItems)-1 {
-			m.cursor++
+		if m.ui.cursor < len(treeItems)-1 {
+			m.ui.cursor++
 			m.adjustScrollOffset()
 		}
 		return m, nil
 	case "ctrl+u", "pgup":
 		// Jump up half page
-		m.cursor = max(0, m.cursor-10)
+		m.ui.cursor = max(0, m.ui.cursor-10)
 		m.adjustScrollOffset()
 		return m, nil
 	case "ctrl+d", "pgdown":
 		// Jump down half page
 		treeItems := m.getVisibleTreeItems()
-		m.cursor = min(len(treeItems)-1, m.cursor+10)
+		m.ui.cursor = min(len(treeItems)-1, m.ui.cursor+10)
 		m.adjustScrollOffset()
 		return m, nil
 	default:
 		var cmd tea.Cmd
-		m.filterInput, cmd = m.filterInput.Update(msg)
+		m.filter.filterInput, cmd = m.filter.filterInput.Update(msg)
 		m.filterSearch()
 		// Reset cursor when filter changes
-		m.cursor = 0
+		m.ui.cursor = 0
 		return m, cmd
 	}
 }
@@ -109,13 +109,13 @@ func (m model) handleFindView(msg tea.KeyMsg) (model, tea.Cmd) {
 	switch msg.String() {
 	case "esc":
 		m.state = listView
-		m.findInput.SetValue("")
+		m.filter.findInput.SetValue("")
 		return m, nil
 	case "enter":
 		// For now, just go back to list view
 		// Could implement custom queries here
 		m.state = listView
-		m.findInput.SetValue("")
+		m.filter.findInput.SetValue("")
 		if m.client != nil {
 			m.loading = true
 			return m, tea.Batch(loadTasks(m.client), loadSprints(m.client), m.spinner.Tick)
@@ -123,7 +123,7 @@ func (m model) handleFindView(msg tea.KeyMsg) (model, tea.Cmd) {
 		return m, nil
 	default:
 		var cmd tea.Cmd
-		m.findInput, cmd = m.findInput.Update(msg)
+		m.filter.findInput, cmd = m.filter.findInput.Update(msg)
 		return m, cmd
 	}
 }
@@ -133,7 +133,7 @@ func (m model) handleStatePickerView(msg tea.KeyMsg) (model, tea.Cmd) {
 	switch msg.String() {
 	case "esc":
 		// Return to appropriate view
-		if len(m.selectedItems) > 0 {
+		if len(m.batch.selectedItems) > 0 {
 			// Was batch operation, return to list
 			m.state = listView
 		} else {
@@ -160,27 +160,27 @@ func (m model) handleStatePickerView(msg tea.KeyMsg) (model, tea.Cmd) {
 		newState := m.availableStates[m.stateCursor]
 
 		// Check if batch operation or single item
-		if len(m.selectedItems) > 0 && m.client != nil {
+		if len(m.batch.selectedItems) > 0 && m.client != nil {
 			// Batch state update
 			m.loading = true
-			count := len(m.selectedItems)
-			m.batchOperationCount = count // Track batch operations
+			count := len(m.batch.selectedItems)
+			m.batch.operationCount = count // Track batch operations
 			m.statusMessage = fmt.Sprintf("Updating %d items to %s...", count, newState)
 			m.state = listView
 
 			var updateCmds []tea.Cmd
-			for itemID := range m.selectedItems {
+			for itemID := range m.batch.selectedItems {
 				updateCmds = append(updateCmds, updateWorkItemState(m.client, itemID, newState))
 			}
 
 			// Clear selection after starting update
-			m.selectedItems = make(map[int]bool)
+			m.batch.selectedItems = make(map[int]bool)
 			updateCmds = append(updateCmds, m.spinner.Tick)
 			return m, tea.Batch(updateCmds...)
 		} else if m.selectedTask != nil && m.client != nil {
 			// Single item state update
 			m.loading = true
-			m.batchOperationCount = 1 // Single operation
+			m.batch.operationCount = 1 // Single operation
 			m.statusMessage = fmt.Sprintf("Updating state to %s...", newState)
 			return m, tea.Batch(
 				updateWorkItemState(m.client, m.selectedTask.ID, newState),
@@ -201,14 +201,14 @@ func (m model) handleEditView(msg tea.KeyMsg) (model, tea.Cmd) {
 		return m, nil
 	case "tab":
 		// Move to next field
-		m.editFieldCursor = (m.editFieldCursor + 1) % m.editFieldCount
+		m.edit.fieldCursor = (m.edit.fieldCursor + 1) % m.edit.fieldCount
 		m.focusEditField()
 		return m, nil
 	case "shift+tab":
 		// Move to previous field
-		m.editFieldCursor--
-		if m.editFieldCursor < 0 {
-			m.editFieldCursor = m.editFieldCount - 1
+		m.edit.fieldCursor--
+		if m.edit.fieldCursor < 0 {
+			m.edit.fieldCursor = m.edit.fieldCount - 1
 		}
 		m.focusEditField()
 		return m, nil
@@ -218,10 +218,10 @@ func (m model) handleEditView(msg tea.KeyMsg) (model, tea.Cmd) {
 			updates := make(map[string]interface{})
 
 			// Collect values from inputs
-			if title := m.editTitleInput.Value(); title != "" && title != m.selectedTask.Title {
+			if title := m.edit.titleInput.Value(); title != "" && title != m.selectedTask.Title {
 				updates["title"] = title
 			}
-			if desc := m.editDescriptionInput.Value(); desc != m.selectedTask.Description {
+			if desc := m.edit.descriptionInput.Value(); desc != m.selectedTask.Description {
 				updates["description"] = desc
 			}
 
@@ -243,11 +243,11 @@ func (m model) handleEditView(msg tea.KeyMsg) (model, tea.Cmd) {
 	default:
 		// Update the focused input field
 		var cmd tea.Cmd
-		switch m.editFieldCursor {
+		switch m.edit.fieldCursor {
 		case 0:
-			m.editTitleInput, cmd = m.editTitleInput.Update(msg)
+			m.edit.titleInput, cmd = m.edit.titleInput.Update(msg)
 		case 1:
-			m.editDescriptionInput, cmd = m.editDescriptionInput.Update(msg)
+			m.edit.descriptionInput, cmd = m.edit.descriptionInput.Update(msg)
 		}
 		return m, cmd
 	}
@@ -259,7 +259,7 @@ func (m model) handleCreateView(msg tea.KeyMsg) (model, tea.Cmd) {
 	case "esc":
 		// Cancel creation and return to list view
 		m.state = listView
-		m.createInput.SetValue("")
+		m.create.input.SetValue("")
 		return m, nil
 	case "enter":
 		// Show help hint instead of submitting
@@ -267,7 +267,7 @@ func (m model) handleCreateView(msg tea.KeyMsg) (model, tea.Cmd) {
 		return m, nil
 	case "ctrl+s":
 		// Save new work item
-		title := strings.TrimSpace(m.createInput.Value())
+		title := strings.TrimSpace(m.create.input.Value())
 		if title == "" {
 			m.statusMessage = "Title cannot be empty"
 			return m, nil
@@ -287,10 +287,10 @@ func (m model) handleCreateView(msg tea.KeyMsg) (model, tea.Cmd) {
 			var areaPath string
 			currentTasks := m.getCurrentTasks()
 
-			if m.createParentID != nil {
+			if m.create.parentID != nil {
 				// Find parent in current tasks to get its area path
 				for _, task := range currentTasks {
-					if task.ID == *m.createParentID {
+					if task.ID == *m.create.parentID {
 						areaPath = task.AreaPath
 						break
 					}
@@ -304,7 +304,7 @@ func (m model) handleCreateView(msg tea.KeyMsg) (model, tea.Cmd) {
 			m.loading = true
 			m.statusMessage = "Creating work item..."
 			return m, tea.Batch(
-				createWorkItem(m.client, title, "Task", iterationPath, m.createParentID, areaPath),
+				createWorkItem(m.client, title, "Task", iterationPath, m.create.parentID, areaPath),
 				m.spinner.Tick,
 			)
 		}
@@ -312,7 +312,7 @@ func (m model) handleCreateView(msg tea.KeyMsg) (model, tea.Cmd) {
 	default:
 		// Update the input field
 		var cmd tea.Cmd
-		m.createInput, cmd = m.createInput.Update(msg)
+		m.create.input, cmd = m.create.input.Update(msg)
 		return m, cmd
 	}
 }
@@ -327,26 +327,26 @@ func (m model) handleDeleteConfirmView(msg tea.KeyMsg) (model, tea.Cmd) {
 			m.state = listView
 
 			// Check if batch delete or single delete
-			if len(m.selectedItems) > 0 {
+			if len(m.batch.selectedItems) > 0 {
 				// Batch delete
 				var deleteCmds []tea.Cmd
-				count := len(m.selectedItems)
-				m.batchOperationCount = count // Track batch operations
+				count := len(m.batch.selectedItems)
+				m.batch.operationCount = count // Track batch operations
 				m.statusMessage = fmt.Sprintf("Deleting %d work items...", count)
 
-				for itemID := range m.selectedItems {
+				for itemID := range m.batch.selectedItems {
 					deleteCmds = append(deleteCmds, deleteWorkItem(m.client, itemID))
 				}
 
 				// Clear selection after starting delete
-				m.selectedItems = make(map[int]bool)
+				m.batch.selectedItems = make(map[int]bool)
 				deleteCmds = append(deleteCmds, m.spinner.Tick)
 				return m, tea.Batch(deleteCmds...)
 			} else {
 				// Single delete
-				m.batchOperationCount = 1 // Single operation
+				m.batch.operationCount = 1 // Single operation
 				m.statusMessage = "Deleting work item..."
-				return m, tea.Batch(deleteWorkItem(m.client, m.deleteItemID), m.spinner.Tick)
+				return m, tea.Batch(deleteWorkItem(m.client, m.delete.itemID), m.spinner.Tick)
 			}
 		}
 		m.state = listView
@@ -369,8 +369,8 @@ func (m model) handleGlobalHotkeys(msg tea.KeyMsg) (model, tea.Cmd, bool) {
 		// Switch to Sprint Mode
 		if m.state == listView && m.currentMode != sprintMode {
 			m.currentMode = sprintMode
-			m.cursor = 0
-			m.scrollOffset = 0
+			m.ui.cursor = 0
+			m.ui.scrollOffset = 0
 			m.setActionLog("Switched to Sprint Mode")
 		}
 		return m, nil, true
@@ -379,8 +379,8 @@ func (m model) handleGlobalHotkeys(msg tea.KeyMsg) (model, tea.Cmd, bool) {
 		// Switch to Backlog Mode
 		if m.state == listView && m.currentMode != backlogMode {
 			m.currentMode = backlogMode
-			m.cursor = 0
-			m.scrollOffset = 0
+			m.ui.cursor = 0
+			m.ui.scrollOffset = 0
 			// Load backlog data if not attempted yet
 			currentList := m.getCurrentList()
 			if currentList != nil && !currentList.attempted && m.client != nil {
@@ -415,9 +415,9 @@ func (m model) handleGlobalHotkeys(msg tea.KeyMsg) (model, tea.Cmd, bool) {
 			m.loading = true
 			m.statusMessage = "Refreshing..."
 			m.setActionLog("Refreshing data...")
-			m.filterActive = false
-			m.filterInput.SetValue("")
-			m.filteredTasks = nil
+			m.filter.active = false
+			m.filter.filterInput.SetValue("")
+			m.filter.filteredTasks = nil
 
 			if m.currentMode == sprintMode {
 				// Clear sprint data
@@ -440,8 +440,8 @@ func (m model) handleGlobalHotkeys(msg tea.KeyMsg) (model, tea.Cmd, bool) {
 			workItemID = m.selectedTask.ID
 		} else if m.state == listView {
 			treeItems := m.getVisibleTreeItems()
-			if len(treeItems) > 0 && m.cursor < len(treeItems) {
-				workItemID = treeItems[m.cursor].WorkItem.ID
+			if len(treeItems) > 0 && m.ui.cursor < len(treeItems) {
+				workItemID = treeItems[m.ui.cursor].WorkItem.ID
 			}
 		}
 		if workItemID > 0 {
@@ -460,7 +460,7 @@ func (m model) handleGlobalHotkeys(msg tea.KeyMsg) (model, tea.Cmd, bool) {
 				loadWorkItemStates(m.client, m.selectedTask.WorkItemType),
 				m.spinner.Tick,
 			), true
-		} else if m.state == listView && len(m.selectedItems) > 0 && m.client != nil {
+		} else if m.state == listView && len(m.batch.selectedItems) > 0 && m.client != nil {
 			// Batch state change from list view
 			m.loading = true
 			m.statusMessage = "Loading states..."
@@ -476,11 +476,11 @@ func (m model) handleGlobalHotkeys(msg tea.KeyMsg) (model, tea.Cmd, bool) {
 		// Enter edit mode - only in detail view
 		if m.state == detailView && m.selectedTask != nil {
 			// Populate edit fields with current values
-			m.editTitleInput.SetValue(m.selectedTask.Title)
-			m.editDescriptionInput.SetValue(m.selectedTask.Description)
-			m.editFieldCursor = 0
-			m.editTitleInput.Focus()
-			m.editDescriptionInput.Blur()
+			m.edit.titleInput.SetValue(m.selectedTask.Title)
+			m.edit.descriptionInput.SetValue(m.selectedTask.Description)
+			m.edit.fieldCursor = 0
+			m.edit.titleInput.Focus()
+			m.edit.descriptionInput.Blur()
 			m.state = editView
 		}
 		return m, nil, true
@@ -489,10 +489,10 @@ func (m model) handleGlobalHotkeys(msg tea.KeyMsg) (model, tea.Cmd, bool) {
 		// Filter within existing results
 		if m.state == listView {
 			m.state = filterView
-			m.filterInput.Focus()
-			m.filterActive = true // Activate filter immediately
-			m.cursor = 0
-			m.scrollOffset = 0
+			m.filter.filterInput.Focus()
+			m.filter.active = true // Activate filter immediately
+			m.ui.cursor = 0
+			m.ui.scrollOffset = 0
 		}
 		return m, nil, true
 
@@ -500,7 +500,7 @@ func (m model) handleGlobalHotkeys(msg tea.KeyMsg) (model, tea.Cmd, bool) {
 		// Find with dedicated query
 		if m.state == listView {
 			m.state = findView
-			m.findInput.Focus()
+			m.filter.findInput.Focus()
 		}
 		return m, nil, true
 
@@ -513,59 +513,59 @@ func (m model) handleGlobalHotkeys(msg tea.KeyMsg) (model, tea.Cmd, bool) {
 		treeItems := m.getVisibleTreeItems()
 		if len(treeItems) == 0 {
 			// Empty list - create first item at root level
-			m.createInsertPos = 0
-			m.createAfter = false
-			m.createParentID = nil
-			m.createDepth = 0
-			m.createIsLast = []bool{}
-		} else if m.cursor >= len(treeItems) {
+			m.create.insertPos = 0
+			m.create.after = false
+			m.create.parentID = nil
+			m.create.depth = 0
+			m.create.isLast = []bool{}
+		} else if m.ui.cursor >= len(treeItems) {
 			// On "Load More" item - do nothing
 			return m, nil, true
 		} else {
-			item := treeItems[m.cursor]
-			m.createAfter = (msg.String() == "a")
+			item := treeItems[m.ui.cursor]
+			m.create.after = (msg.String() == "a")
 
-			if m.createAfter {
+			if m.create.after {
 				// Append after - check if current item has children or can have children
 				// If current item is a parent (has children or could be one), create as first child
 				if len(item.WorkItem.Children) > 0 {
 					// Has children - insert as first child (right after parent)
-					m.createInsertPos = m.cursor + 1
-					m.createDepth = item.Depth + 1
-					m.createParentID = &item.WorkItem.ID
+					m.create.insertPos = m.ui.cursor + 1
+					m.create.depth = item.Depth + 1
+					m.create.parentID = &item.WorkItem.ID
 					// Append false to IsLast (not last in parent's IsLast chain, plus new child level)
-					m.createIsLast = append([]bool{}, item.IsLast...)
-					m.createIsLast = append(m.createIsLast, false) // First child, not last
+					m.create.isLast = append([]bool{}, item.IsLast...)
+					m.create.isLast = append(m.create.isLast, false) // First child, not last
 				} else {
 					// No children - create as sibling after the subtree
-					m.createInsertPos = getPositionAfterSubtree(treeItems, m.cursor)
+					m.create.insertPos = getPositionAfterSubtree(treeItems, m.ui.cursor)
 					// Determine parent and depth based on position after subtree
-					if m.createInsertPos < len(treeItems) {
+					if m.create.insertPos < len(treeItems) {
 						// There's an item after the subtree - use same depth as cursor item (sibling)
-						m.createDepth = item.Depth
-						m.createParentID = getParentIDForTreeItem(item)
-						m.createIsLast = append([]bool{}, item.IsLast...)
+						m.create.depth = item.Depth
+						m.create.parentID = getParentIDForTreeItem(item)
+						m.create.isLast = append([]bool{}, item.IsLast...)
 					} else {
 						// Appending at end of list - same depth as cursor item
-						m.createDepth = item.Depth
-						m.createParentID = getParentIDForTreeItem(item)
-						m.createIsLast = append([]bool{}, item.IsLast...)
-						if len(m.createIsLast) > 0 {
-							m.createIsLast[len(m.createIsLast)-1] = true // Mark as last
+						m.create.depth = item.Depth
+						m.create.parentID = getParentIDForTreeItem(item)
+						m.create.isLast = append([]bool{}, item.IsLast...)
+						if len(m.create.isLast) > 0 {
+							m.create.isLast[len(m.create.isLast)-1] = true // Mark as last
 						}
 					}
 				}
 			} else {
 				// Insert before - same depth and parent as current item
-				m.createInsertPos = m.cursor
-				m.createDepth = item.Depth
-				m.createParentID = getParentIDForTreeItem(item)
-				m.createIsLast = append([]bool{}, item.IsLast...)
+				m.create.insertPos = m.ui.cursor
+				m.create.depth = item.Depth
+				m.create.parentID = getParentIDForTreeItem(item)
+				m.create.isLast = append([]bool{}, item.IsLast...)
 			}
 		}
 
-		m.createInput.SetValue("")
-		m.createInput.Focus()
+		m.create.input.SetValue("")
+		m.create.input.Focus()
 		m.state = createView
 		return m, nil, true
 
@@ -576,7 +576,7 @@ func (m model) handleGlobalHotkeys(msg tea.KeyMsg) (model, tea.Cmd, bool) {
 		}
 
 		// Check if we have batch selection
-		if len(m.selectedItems) > 0 {
+		if len(m.batch.selectedItems) > 0 {
 			// Batch delete - just set flag, will be handled in confirmation
 			m.state = deleteConfirmView
 			return m, nil, true
@@ -584,15 +584,15 @@ func (m model) handleGlobalHotkeys(msg tea.KeyMsg) (model, tea.Cmd, bool) {
 
 		// Single delete
 		treeItems := m.getVisibleTreeItems()
-		if len(treeItems) == 0 || m.cursor >= len(treeItems) {
+		if len(treeItems) == 0 || m.ui.cursor >= len(treeItems) {
 			// Empty list or on "Load More" - do nothing
 			return m, nil, true
 		}
 
 		// Store the item to delete and show confirmation
-		item := treeItems[m.cursor].WorkItem
-		m.deleteItemID = item.ID
-		m.deleteItemTitle = item.Title
+		item := treeItems[m.ui.cursor].WorkItem
+		m.delete.itemID = item.ID
+		m.delete.itemTitle = item.Title
 		m.state = deleteConfirmView
 		return m, nil, true
 	}
@@ -607,25 +607,25 @@ func (m model) handleListViewNav(msg tea.KeyMsg) (model, tea.Cmd) {
 	case "right", "l":
 		// Drill down to detail view
 		treeItems := m.getVisibleTreeItems()
-		if len(treeItems) > 0 && m.cursor < len(treeItems) {
-			m.selectedTask = treeItems[m.cursor].WorkItem
+		if len(treeItems) > 0 && m.ui.cursor < len(treeItems) {
+			m.selectedTask = treeItems[m.ui.cursor].WorkItem
 			m.selectedTaskID = m.selectedTask.ID
 			m.state = detailView
 		}
 	case "tab":
 		// Cycle through tabs based on current mode
 		// Clear selections when switching tabs
-		m.selectedItems = make(map[int]bool)
+		m.batch.selectedItems = make(map[int]bool)
 
 		if m.currentMode == sprintMode {
 			m.currentTab = (m.currentTab + 1) % 3
 			// Restore cursor/scroll from the new tab's list
 			if list := m.getCurrentList(); list != nil {
-				m.cursor = list.cursor
-				m.scrollOffset = list.scrollOffset
+				m.ui.cursor = list.cursor
+				m.ui.scrollOffset = list.scrollOffset
 			} else {
-				m.cursor = 0
-				m.scrollOffset = 0
+				m.ui.cursor = 0
+				m.ui.scrollOffset = 0
 			}
 			// Load sprint data if not attempted yet
 			currentList := m.getCurrentList()
@@ -639,11 +639,11 @@ func (m model) handleListViewNav(msg tea.KeyMsg) (model, tea.Cmd) {
 			m.currentBacklogTab = (m.currentBacklogTab + 1) % 2
 			// Restore cursor/scroll from the new tab's list
 			if list := m.getCurrentList(); list != nil {
-				m.cursor = list.cursor
-				m.scrollOffset = list.scrollOffset
+				m.ui.cursor = list.cursor
+				m.ui.scrollOffset = list.scrollOffset
 			} else {
-				m.cursor = 0
-				m.scrollOffset = 0
+				m.ui.cursor = 0
+				m.ui.scrollOffset = 0
 			}
 			// Load backlog data if not attempted yet
 			currentList := m.getCurrentList()
@@ -654,13 +654,13 @@ func (m model) handleListViewNav(msg tea.KeyMsg) (model, tea.Cmd) {
 			}
 		}
 	case "up", "k":
-		if m.cursor > 0 {
-			m.cursor--
+		if m.ui.cursor > 0 {
+			m.ui.cursor--
 			m.adjustScrollOffset()
 			// Also update current list's cursor
 			if list := m.getCurrentList(); list != nil {
-				list.cursor = m.cursor
-				list.scrollOffset = m.scrollOffset
+				list.cursor = m.ui.cursor
+				list.scrollOffset = m.ui.scrollOffset
 			}
 		}
 	case "down", "j":
@@ -670,23 +670,23 @@ func (m model) handleListViewNav(msg tea.KeyMsg) (model, tea.Cmd) {
 		if m.hasMoreItems() {
 			maxCursor = len(treeItems)
 		}
-		if m.cursor < maxCursor {
-			m.cursor++
+		if m.ui.cursor < maxCursor {
+			m.ui.cursor++
 			m.adjustScrollOffset()
 			// Also update current list's cursor
 			if list := m.getCurrentList(); list != nil {
-				list.cursor = m.cursor
-				list.scrollOffset = m.scrollOffset
+				list.cursor = m.ui.cursor
+				list.scrollOffset = m.ui.scrollOffset
 			}
 		}
 	case "ctrl+u", "pgup":
 		// Jump up half page
-		m.cursor = max(0, m.cursor-10)
+		m.ui.cursor = max(0, m.ui.cursor-10)
 		m.adjustScrollOffset()
 		// Also update current list's cursor
 		if list := m.getCurrentList(); list != nil {
-			list.cursor = m.cursor
-			list.scrollOffset = m.scrollOffset
+			list.cursor = m.ui.cursor
+			list.scrollOffset = m.ui.scrollOffset
 		}
 	case "ctrl+d", "pgdown":
 		// Jump down half page
@@ -695,28 +695,28 @@ func (m model) handleListViewNav(msg tea.KeyMsg) (model, tea.Cmd) {
 		if m.hasMoreItems() {
 			maxCursor = len(treeItems)
 		}
-		m.cursor = min(maxCursor, m.cursor+10)
+		m.ui.cursor = min(maxCursor, m.ui.cursor+10)
 		m.adjustScrollOffset()
 		// Also update current list's cursor
 		if list := m.getCurrentList(); list != nil {
-			list.cursor = m.cursor
-			list.scrollOffset = m.scrollOffset
+			list.cursor = m.ui.cursor
+			list.scrollOffset = m.ui.scrollOffset
 		}
 	case " ":
 		// Toggle selection for current item
 		treeItems := m.getVisibleTreeItems()
-		if len(treeItems) > 0 && m.cursor < len(treeItems) {
-			itemID := treeItems[m.cursor].WorkItem.ID
-			if m.selectedItems[itemID] {
-				delete(m.selectedItems, itemID)
+		if len(treeItems) > 0 && m.ui.cursor < len(treeItems) {
+			itemID := treeItems[m.ui.cursor].WorkItem.ID
+			if m.batch.selectedItems[itemID] {
+				delete(m.batch.selectedItems, itemID)
 			} else {
-				m.selectedItems[itemID] = true
+				m.batch.selectedItems[itemID] = true
 			}
 		}
 	case "enter":
 		treeItems := m.getVisibleTreeItems()
 		// Check if cursor is on "Load More" item
-		if m.cursor == len(treeItems) && m.hasMoreItems() {
+		if m.ui.cursor == len(treeItems) && m.hasMoreItems() {
 			if m.client != nil {
 				m.loadingMore = true
 
@@ -755,8 +755,8 @@ func (m model) handleListViewNav(msg tea.KeyMsg) (model, tea.Cmd) {
 					return m, tea.Batch(loadMoreBacklogItems(m.client, m.currentBacklogTab, m.getCurrentSprintPath(), excludeIDs), m.spinner.Tick)
 				}
 			}
-		} else if len(treeItems) > 0 && m.cursor < len(treeItems) {
-			m.selectedTask = treeItems[m.cursor].WorkItem
+		} else if len(treeItems) > 0 && m.ui.cursor < len(treeItems) {
+			m.selectedTask = treeItems[m.ui.cursor].WorkItem
 			m.selectedTaskID = m.selectedTask.ID
 			m.state = detailView
 		}
@@ -846,8 +846,8 @@ func (m model) handleTasksLoadedMsg(msg tasksLoadedMsg) (model, tea.Cmd) {
 
 				if targetTab == m.currentTab && m.currentMode == sprintMode {
 					// Sync cursor/scroll from list
-					m.cursor = list.cursor
-					m.scrollOffset = list.scrollOffset
+					m.ui.cursor = list.cursor
+					m.ui.scrollOffset = list.scrollOffset
 				}
 				m.statusMessage = ""
 
@@ -889,8 +889,8 @@ func (m model) handleTasksLoadedMsg(msg tasksLoadedMsg) (model, tea.Cmd) {
 
 				if targetTab == m.currentBacklogTab && m.currentMode == backlogMode {
 					// Sync cursor/scroll from list
-					m.cursor = list.cursor
-					m.scrollOffset = list.scrollOffset
+					m.ui.cursor = list.cursor
+					m.ui.scrollOffset = list.scrollOffset
 				}
 				m.statusMessage = ""
 
@@ -915,17 +915,17 @@ func (m model) handleStateUpdatedMsg(msg stateUpdatedMsg) (model, tea.Cmd) {
 		m.loading = false
 		m.statusMessage = fmt.Sprintf("Error: %v", msg.err)
 		m.setActionLog(fmt.Sprintf("Error updating state: %v", msg.err))
-		m.batchOperationCount = 0 // Reset on error
+		m.batch.operationCount = 0 // Reset on error
 		m.state = listView
 		m.stateCursor = 0
 	} else {
 		// Success! Decrement counter
-		if m.batchOperationCount > 0 {
-			m.batchOperationCount--
+		if m.batch.operationCount > 0 {
+			m.batch.operationCount--
 		}
 
 		// Only refresh when all operations are complete
-		if m.batchOperationCount == 0 {
+		if m.batch.operationCount == 0 {
 			m.loading = false
 			m.statusMessage = ""
 			oldState := ""
@@ -1063,7 +1063,7 @@ func (m model) handleWorkItemCreatedMsg(msg workItemCreatedMsg) (model, tea.Cmd)
 		m.state = errorView
 	} else if msg.workItem != nil {
 		// Success! Store the created item ID and continue with spinner
-		m.createdItemID = msg.workItem.ID
+		m.create.createdItemID = msg.workItem.ID
 		m.statusMessage = "Refreshing list..."
 		m.setActionLog(fmt.Sprintf("Created #%d: %s", msg.workItem.ID, msg.workItem.Title))
 
@@ -1098,15 +1098,15 @@ func (m model) handleWorkItemDeletedMsg(msg workItemDeletedMsg) (model, tea.Cmd)
 		m.loading = false
 		m.statusMessage = fmt.Sprintf("Error: %v", msg.err)
 		m.setActionLog(fmt.Sprintf("Error deleting work item: %v", msg.err))
-		m.batchOperationCount = 0 // Reset on error
+		m.batch.operationCount = 0 // Reset on error
 	} else {
 		// Success! Decrement counter
-		if m.batchOperationCount > 0 {
-			m.batchOperationCount--
+		if m.batch.operationCount > 0 {
+			m.batch.operationCount--
 		}
 
 		// Only refresh when all operations are complete
-		if m.batchOperationCount == 0 {
+		if m.batch.operationCount == 0 {
 			m.statusMessage = "Refreshing list..."
 			m.setActionLog(fmt.Sprintf("Deleted work item(s)"))
 

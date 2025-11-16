@@ -12,8 +12,8 @@ func (m model) renderListView() string {
 
 	// Title bar
 	title := "Azure DevOps - Work Items"
-	if m.filterActive {
-		title += fmt.Sprintf(" (filtered: %d results)", len(m.filteredTasks))
+	if m.filter.active {
+		title += fmt.Sprintf(" (filtered: %d results)", len(m.filter.filteredTasks))
 	}
 	content.WriteString(m.renderTitleBar(title))
 
@@ -106,8 +106,8 @@ func (m model) renderListView() string {
 
 	// Calculate visible range based on scroll offset
 	contentHeight := m.getContentHeight()
-	startIdx := m.scrollOffset
-	endIdx := m.scrollOffset + contentHeight
+	startIdx := m.ui.scrollOffset
+	endIdx := m.ui.scrollOffset + contentHeight
 
 	// Total items including potential "Load More" item
 	totalItems := len(treeItems)
@@ -130,7 +130,7 @@ func (m model) renderListView() string {
 
 				cursor := " "
 				loadMoreIdx := len(treeItems)
-				if m.cursor == loadMoreIdx {
+				if m.ui.cursor == loadMoreIdx {
 					cursor = ">"
 				}
 
@@ -139,7 +139,7 @@ func (m model) renderListView() string {
 				// Show spinner inline if loading more
 				if m.loadingMore {
 					loadMoreText = fmt.Sprintf("%s %s Loading more items...", cursor, m.spinner.View())
-					if m.cursor == loadMoreIdx {
+					if m.ui.cursor == loadMoreIdx {
 						loadMoreText = m.styles.Selected.Render(loadMoreText)
 					} else {
 						loadMoreText = m.styles.LoadMore.Render(loadMoreText)
@@ -151,7 +151,7 @@ func (m model) renderListView() string {
 						loadMoreText = fmt.Sprintf("%s Load All (+%d)", cursor, remaining)
 					}
 
-					if m.cursor == loadMoreIdx {
+					if m.ui.cursor == loadMoreIdx {
 						loadMoreText = m.styles.Selected.Render(loadMoreText)
 					} else {
 						loadMoreText = m.styles.LoadMore.Render(loadMoreText)
@@ -164,8 +164,8 @@ func (m model) renderListView() string {
 		}
 
 		treeItem := treeItems[i]
-		isSelected := m.cursor == i
-		isBatchSelected := m.selectedItems[treeItem.WorkItem.ID]
+		isSelected := m.ui.cursor == i
+		isBatchSelected := m.batch.selectedItems[treeItem.WorkItem.ID]
 
 		cursor := " "
 		if isSelected {
@@ -236,8 +236,8 @@ func (m model) renderListView() string {
 
 	// Footer with keybindings
 	batchInfo := ""
-	if len(m.selectedItems) > 0 {
-		batchInfo = fmt.Sprintf(" • %d items selected", len(m.selectedItems))
+	if len(m.batch.selectedItems) > 0 {
+		batchInfo = fmt.Sprintf(" • %d items selected", len(m.batch.selectedItems))
 	}
 	keybindings := fmt.Sprintf("tab: cycle tabs • →/l: details • ↑/↓ or j/k: navigate • space: select/deselect%s\ni: insert • a: append • d: delete • s: change state • enter: details • o: open • /: filter • f: find • r: refresh • ?: help • q: quit", batchInfo)
 	content.WriteString(m.renderFooter(keybindings))
