@@ -612,7 +612,13 @@ func (c *AzureDevOpsClient) GetCurrentAndAdjacentSprints() (prev, curr, next *wo
 			start := startDate.Time
 			finish := finishDate.Time
 
-			if now.After(start) && now.Before(finish) {
+			// Truncate to start of day (removes time component) for date-only comparison
+			startDate := start.Truncate(24 * time.Hour)
+			finishDate := finish.Truncate(24 * time.Hour)
+			nowDate := now.Truncate(24 * time.Hour)
+
+			// Check if today falls within the sprint (inclusive of start and end dates)
+			if !nowDate.Before(startDate) && !nowDate.After(finishDate) {
 				currentIdx = i
 				curr = &iterations[i]
 				break
