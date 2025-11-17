@@ -10,7 +10,9 @@ import (
 
 func main() {
 	// Load .env file if it exists (ignore error if it doesn't)
+	// Try current directory first, then parent directory
 	_ = godotenv.Load()
+	_ = godotenv.Load("../.env")
 
 	p := tea.NewProgram(initialModel(), tea.WithAltScreen())
 	if _, err := p.Run(); err != nil {

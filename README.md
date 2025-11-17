@@ -9,15 +9,12 @@ A terminal user interface (TUI) for Azure DevOps task management, built with Go 
 - In-app update check 
 - Use go-selfupdate if update available (and offer "skip version")
 
+- config file for what is now the .env variables (env variables for config locaaaaatn)
 - changelog generation
 - changelog support in-app
 - add license file (MIT)
-- ✅ ~~add tests for key components~~ (Implemented - tree operations)
 - add CI for tests and linting
-- ✅ ~~add code coverage reporting~~ (Implemented - `go test -cover`)
 - stylize the header bar
-- ascii art welcome?
-
 - justfile
 
 ## Features

@@ -11,7 +11,7 @@ func (m model) renderListView() string {
 	var content strings.Builder
 
 	// Title bar
-	title := "Azure DevOps - Work Items"
+	title := "Hippo - ADO Task Management"
 	if m.filter.active {
 		title += fmt.Sprintf(" (filtered: %d results)", len(m.filter.filteredTasks))
 	}

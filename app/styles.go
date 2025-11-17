@@ -12,6 +12,7 @@ const (
 	ColorVeryDim     = "241"
 	ColorGreen       = "86"
 	ColorPink        = "212"
+	ColorPastelPink  = "218"
 	ColorBlue        = "39"
 	ColorBrightBlue  = "63"
 	ColorOrange      = "208"

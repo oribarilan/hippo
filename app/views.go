@@ -155,7 +155,7 @@ func (m model) renderLogLine() string {
 // renderTitleBar renders the title bar with the given title text
 func (m model) renderTitleBar(title string) string {
 	titleBarStyle := lipgloss.NewStyle().
-		Background(lipgloss.Color(ColorPurple)).
+		Background(lipgloss.Color(ColorGray)).
 		Foreground(lipgloss.Color(ColorWhite)).
 		Bold(true).
 		Width(m.ui.width).
