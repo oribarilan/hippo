@@ -48,6 +48,8 @@ func (m model) handleGlobalHotkeys(msg tea.KeyMsg) (model, tea.Cmd, bool) {
 		if m.state == helpView {
 			m.state = listView
 		} else {
+			// Prepare help content for viewport
+			m = m.prepareHelpViewport()
 			m.state = helpView
 		}
 		return m, nil, true

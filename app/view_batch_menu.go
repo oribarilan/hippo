@@ -3,6 +3,8 @@ package main
 import (
 	"fmt"
 	"strings"
+
+	"github.com/charmbracelet/lipgloss"
 )
 
 // renderBatchEditMenuView renders the batch edit menu where users choose which field to edit
@@ -53,16 +55,22 @@ func (m model) renderBatchEditMenuView() string {
 
 	for i, opt := range options {
 		cursor := "  "
-		nameStyle := m.styles.Dim
+		nameStyle := lipgloss.NewStyle().Foreground(lipgloss.Color(ColorLightGray))
+		descStyle := m.styles.Dim
+
 		if i == m.stateCursor {
 			cursor = "→ "
-			nameStyle = m.styles.Selected
+			// Highlight the selected option name with purple background
+			nameStyle = lipgloss.NewStyle().
+				Foreground(lipgloss.Color(ColorWhite)).
+				Background(lipgloss.Color(ColorPurple)).
+				Bold(true)
 		}
 
 		content.WriteString(fmt.Sprintf("%s%s\n",
 			cursor, nameStyle.Render(opt.name)))
 		content.WriteString(fmt.Sprintf("     %s\n\n",
-			m.styles.Dim.Render(opt.desc)))
+			descStyle.Render(opt.desc)))
 	}
 
 	content.WriteString(m.renderFooter("↑/↓ or j/k: navigate • enter: select • esc: cancel"))

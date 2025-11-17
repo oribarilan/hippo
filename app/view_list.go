@@ -148,7 +148,7 @@ func (m model) renderListView() string {
 	if len(m.batch.selectedItems) > 0 {
 		batchInfo = fmt.Sprintf(" • %d items selected", len(m.batch.selectedItems))
 	}
-	keybindings := fmt.Sprintf("tab: cycle tabs • →/l: details • ↑/↓ or j/k: navigate • space: select/deselect%s\ni: insert • a: append • d: delete • e: batch edit • enter: details • o: open • /: filter • f: find • r: refresh • ?: help • q: quit", batchInfo)
+	keybindings := fmt.Sprintf("tab: cycle tabs • space: select/deselect%s\ni: insert • d: delete • e: edit • enter: details • o: open • /: filter • f: find • r: refresh • ?: help • q: quit", batchInfo)
 	content.WriteString(m.renderFooter(keybindings))
 
 	return content.String()

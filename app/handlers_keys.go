@@ -13,12 +13,27 @@ import (
 
 // handleHelpView handles keyboard input in the help view
 func (m model) handleHelpView(msg tea.KeyMsg) (model, tea.Cmd) {
+	var cmd tea.Cmd
+
 	switch msg.String() {
-	case "esc", "?":
+	case "esc", "?", "q":
 		m.state = listView
 		return m, nil
+	case "up", "k":
+		m.viewport.LineUp(1)
+	case "down", "j":
+		m.viewport.LineDown(1)
+	case "ctrl+u", "pgup":
+		m.viewport.HalfViewUp()
+	case "ctrl+d", "pgdown":
+		m.viewport.HalfViewDown()
+	case "g":
+		m.viewport.GotoTop()
+	case "G":
+		m.viewport.GotoBottom()
 	}
-	return m, nil
+
+	return m, cmd
 }
 
 // handleErrorView handles keyboard input in the error view
