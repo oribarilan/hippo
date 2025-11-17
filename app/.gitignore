@@ -1,9 +1,0 @@
-.env
-hippo
-*.exe
-*.dll
-*.so
-*.dylib
-*.test
-*.out
-go.work
