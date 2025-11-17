@@ -10,7 +10,27 @@ import (
 // View renders the appropriate view based on the current state
 func (m model) View() string {
 	if m.err != nil {
-		return fmt.Sprintf("\n  Error: %v\n\n", m.err)
+		// Render a nice error view with instructions
+		var content strings.Builder
+
+		errorStyle := lipgloss.NewStyle().
+			Foreground(lipgloss.Color("196")).
+			Bold(true).
+			Padding(1, 2)
+
+		hintStyle := lipgloss.NewStyle().
+			Foreground(lipgloss.Color("241")).
+			Padding(0, 2)
+
+		content.WriteString("\n")
+		content.WriteString(errorStyle.Render("❌ Error"))
+		content.WriteString("\n\n")
+		content.WriteString(lipgloss.NewStyle().Padding(0, 2).Render(m.err.Error()))
+		content.WriteString("\n\n")
+		content.WriteString(hintStyle.Render("Press 'q' or 'Ctrl+C' to quit"))
+		content.WriteString("\n")
+
+		return content.String()
 	}
 
 	switch m.state {
@@ -20,6 +40,8 @@ func (m model) View() string {
 		return m.renderDetailView()
 	case statePickerView:
 		return m.renderStatePickerView()
+	case sprintPickerView:
+		return m.renderSprintPickerView()
 	case batchEditMenuView:
 		return m.renderBatchEditMenuView()
 	case filterView:
@@ -36,6 +58,8 @@ func (m model) View() string {
 		return m.renderErrorView()
 	case deleteConfirmView:
 		return m.renderDeleteConfirmView()
+	case moveChildrenConfirmView:
+		return m.renderMoveChildrenConfirmView()
 	default:
 		return m.renderListView()
 	}

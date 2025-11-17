@@ -50,6 +50,11 @@ func NewAzureDevOpsClient() (*AzureDevOpsClient, error) {
 		return nil, fmt.Errorf("failed to get Azure CLI token: %w\nPlease run 'az login' first", err)
 	}
 
+	// Validate token is not empty and looks valid
+	if len(accessToken) < 20 {
+		return nil, fmt.Errorf("received invalid token from Azure CLI (too short)")
+	}
+
 	// Create a connection to Azure DevOps using the Azure CLI token
 	connection := azuredevops.NewPatConnection(organizationURL, accessToken)
 
@@ -58,7 +63,7 @@ func NewAzureDevOpsClient() (*AzureDevOpsClient, error) {
 	// Create work item tracking client
 	workItemClient, err := workitemtracking.NewClient(ctx, connection)
 	if err != nil {
-		return nil, fmt.Errorf("failed to create work item client: %w", err)
+		return nil, fmt.Errorf("failed to create work item client: %w\n\nOrganization URL: %s\n\nPlease verify:\n  1. URL format is https://dev.azure.com/your-organization (no trailing slash)\n  2. You have access to this Azure DevOps organization\n  3. Run 'az account show' to verify correct account", err, organizationURL)
 	}
 
 	// Create work client for iterations

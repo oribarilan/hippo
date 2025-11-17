@@ -202,6 +202,52 @@ func (m model) handleStateUpdatedMsg(msg stateUpdatedMsg) (model, tea.Cmd) {
 	return m, nil
 }
 
+// handleSprintUpdatedMsg handles the sprintUpdatedMsg response
+func (m model) handleSprintUpdatedMsg(msg sprintUpdatedMsg) (model, tea.Cmd) {
+	if msg.err != nil {
+		// Show detailed error
+		m.loading = false
+		m.statusMessage = fmt.Sprintf("Error: %v", msg.err)
+		m.setActionLog(fmt.Sprintf("Error moving to sprint: %v", msg.err))
+		m.batch.operationCount = 0 // Reset on error
+		m.state = listView
+		m.stateCursor = 0
+	} else {
+		// Success! Decrement counter
+		if m.batch.operationCount > 0 {
+			m.batch.operationCount--
+		}
+
+		// Only refresh when all operations are complete
+		if m.batch.operationCount == 0 {
+			m.loading = false
+			m.statusMessage = ""
+			m.state = listView
+			m.stateCursor = 0
+			m.statusMessage = "Sprint updated successfully!"
+			m.setActionLog("Moved items to sprint successfully")
+
+			// Refresh the list
+			if m.client != nil {
+				m.loading = true
+				m.statusMessage = "Refreshing list..."
+				if m.currentMode == sprintMode {
+					// Clear sprint data and reload
+					m.sprintLists = make(map[sprintTab]*WorkItemList)
+					return m, tea.Batch(loadSprintsWithReload(m.client, true), m.spinner.Tick)
+				} else {
+					// Clear backlog data and reload current tab
+					m.backlogLists = make(map[backlogTab]*WorkItemList)
+					tab := m.currentBacklogTab
+					return m, tea.Batch(loadTasksForBacklogTab(m.client, tab, m.getCurrentSprintPath()), m.spinner.Tick)
+				}
+			}
+		}
+	}
+
+	return m, nil
+}
+
 // handleWorkItemUpdatedMsg handles the workItemUpdatedMsg response
 func (m model) handleWorkItemUpdatedMsg(msg workItemUpdatedMsg) (model, tea.Cmd) {
 	m.loading = false
@@ -372,7 +418,9 @@ func (m model) handleSprintsLoadedMsg(msg sprintsLoadedMsg) (model, tea.Cmd) {
 	}
 
 	if msg.err != nil {
-		m.statusMessage = fmt.Sprintf("Error loading sprints: %v", msg.err)
+		m.err = fmt.Errorf("failed to load sprints: %w", msg.err)
+		m.loading = false
+		return m, nil
 	} else {
 		needsReload := len(m.sprints) == 0 || msg.forceReload // First time loading sprints OR forced reload
 

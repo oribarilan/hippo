@@ -10,6 +10,17 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	var cmd tea.Cmd
 	var cmds []tea.Cmd
 
+	// Handle quit when there's an error
+	if m.err != nil {
+		if msg, ok := msg.(tea.KeyMsg); ok {
+			switch msg.String() {
+			case "q", "ctrl+c":
+				return m, tea.Quit
+			}
+		}
+		return m, nil
+	}
+
 	switch msg := msg.(type) {
 	case tea.WindowSizeMsg:
 		// Store window dimensions
@@ -39,6 +50,8 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			return m.handleFindView(msg)
 		case statePickerView:
 			return m.handleStatePickerView(msg)
+		case sprintPickerView:
+			return m.handleSprintPickerView(msg)
 		case batchEditMenuView:
 			return m.handleBatchEditMenuView(msg)
 		case editView:
@@ -47,6 +60,8 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			return m.handleCreateView(msg)
 		case deleteConfirmView:
 			return m.handleDeleteConfirmView(msg)
+		case moveChildrenConfirmView:
+			return m.handleMoveChildrenConfirmView(msg)
 		case listView:
 			// Try global hotkeys first
 			newModel, cmd, handled := m.handleGlobalHotkeys(msg)
@@ -85,6 +100,9 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 	case workItemDeletedMsg:
 		return m.handleWorkItemDeletedMsg(msg)
+
+	case sprintUpdatedMsg:
+		return m.handleSprintUpdatedMsg(msg)
 
 	case sprintsLoadedMsg:
 		return m.handleSprintsLoadedMsg(msg)

@@ -47,7 +47,8 @@ func (m model) renderBatchEditMenuView() string {
 		desc string
 	}{
 		{"State", "Change work item state (New, Active, Resolved, etc.)"},
-		// Future: Sprint, Assigned To, Priority, etc.
+		{"Sprint", "Move items to a specific sprint (Previous, Current, Next, or Backlog)"},
+		// Future: Assigned To, Priority, etc.
 	}
 
 	for i, opt := range options {

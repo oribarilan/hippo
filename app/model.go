@@ -268,6 +268,11 @@ func (m model) getStateCategory(state string) string {
 	return "InProgress"
 }
 
+// isWorkItemCompleted returns true if the work item is in the Completed category
+func (m model) isWorkItemCompleted(item *WorkItem) bool {
+	return m.getStateCategory(item.State) == "Completed"
+}
+
 // getCurrentSprintPath returns the current sprint path if available
 func (m model) getCurrentSprintPath() string {
 	if sprint := m.sprints[currentSprint]; sprint != nil {

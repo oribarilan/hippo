@@ -24,6 +24,8 @@ const (
 	errorView
 	deleteConfirmView
 	batchEditMenuView
+	sprintPickerView
+	moveChildrenConfirmView
 )
 
 type appMode int
@@ -103,6 +105,17 @@ type FilterState struct {
 	findInput     textinput.Model
 }
 
+// SprintMoveState contains state for sprint move operation
+type SprintMoveState struct {
+	targetPath      string     // Target sprint path
+	targetName      string     // Target sprint name for display
+	parentIDs       []int      // Parent work item IDs being moved
+	includeChildren bool       // Whether to move children as well
+	childCount      int        // Total number of children that would be moved
+	itemsToMove     []TreeItem // Tree structure of items that will be moved (for display)
+	skippedCount    int        // Number of completed items that were skipped
+}
+
 type model struct {
 	// WorkItemList instances - component-based architecture
 	sprintLists  map[sprintTab]*WorkItemList
@@ -133,12 +146,13 @@ type model struct {
 	initialLoading    int // Count of initial sprint loads pending
 
 	// Grouped state
-	ui     UIState
-	edit   EditState
-	create CreateState
-	delete DeleteState
-	batch  BatchState
-	filter FilterState
+	ui         UIState
+	edit       EditState
+	create     CreateState
+	delete     DeleteState
+	batch      BatchState
+	filter     FilterState
+	sprintMove SprintMoveState
 
 	// UI styles
 	styles Styles // Centralized styles for the application

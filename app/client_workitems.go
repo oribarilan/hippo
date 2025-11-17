@@ -254,6 +254,38 @@ func (c *AzureDevOpsClient) DeleteWorkItem(workItemID int) error {
 	return nil
 }
 
+// MoveWorkItemToSprint moves a work item to a specific sprint by updating its iteration path
+func (c *AzureDevOpsClient) MoveWorkItemToSprint(workItemID int, iterationPath string) error {
+	op := webapi.OperationValues.Add
+	var patchDocument []webapi.JsonPatchOperation
+
+	// Set iteration path (empty string moves to backlog)
+	iterPathField := "/fields/System.IterationPath"
+	value := iterationPath
+	if value == "" {
+		value = c.project // Empty path means project root (backlog)
+	}
+
+	path := iterPathField
+	patchDocument = append(patchDocument, webapi.JsonPatchOperation{
+		Op:    &op,
+		Path:  &path,
+		Value: value,
+	})
+
+	updateArgs := workitemtracking.UpdateWorkItemArgs{
+		Id:       &workItemID,
+		Document: &patchDocument,
+	}
+
+	_, err := c.workItemClient.UpdateWorkItem(c.ctx, updateArgs)
+	if err != nil {
+		return fmt.Errorf("failed to move work item to sprint: %w", err)
+	}
+
+	return nil
+}
+
 // CreateWorkItem creates a new work item in Azure DevOps
 func (c *AzureDevOpsClient) CreateWorkItem(title string, workItemType string, iterationPath string, parentID *int, areaPath string) (*WorkItem, error) {
 	// Build patch document

@@ -20,7 +20,7 @@ func (m model) handleBatchEditMenuView(msg tea.KeyMsg) (model, tea.Cmd) {
 		}
 
 	case "down", "j":
-		maxOptions := 1 // Only State for now (0-indexed, so max is 0)
+		maxOptions := 1 // State and Sprint (0-indexed, so max is 1)
 		if m.stateCursor < maxOptions {
 			m.stateCursor++
 		}
@@ -31,7 +31,7 @@ func (m model) handleBatchEditMenuView(msg tea.KeyMsg) (model, tea.Cmd) {
 
 	case "ctrl+d", "pgdown":
 		// Jump down half page
-		maxOptions := 1 // Only State for now
+		maxOptions := 1 // State and Sprint
 		m.stateCursor = min(maxOptions, m.stateCursor+10)
 
 	case "enter":
@@ -48,10 +48,11 @@ func (m model) handleBatchEditMenuView(msg tea.KeyMsg) (model, tea.Cmd) {
 					m.spinner.Tick,
 				)
 			}
-			// Future cases:
-			// case 1: // Sprint
-			// case 2: // Assigned To
-			// case 3: // Priority
+		case 1: // Sprint
+			// Show sprint picker
+			m.stateCursor = 0 // Reset for sprint picker
+			m.state = sprintPickerView
+			return m, nil
 		}
 	}
 

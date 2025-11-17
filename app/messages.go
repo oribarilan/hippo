@@ -40,6 +40,11 @@ type workItemDeletedMsg struct {
 	err        error
 }
 
+type sprintUpdatedMsg struct {
+	workItemID int
+	err        error
+}
+
 type statesLoadedMsg struct {
 	states          []string
 	stateCategories map[string]string
@@ -253,5 +258,12 @@ func deleteWorkItem(client *AzureDevOpsClient, workItemID int) tea.Cmd {
 	return func() tea.Msg {
 		err := client.DeleteWorkItem(workItemID)
 		return workItemDeletedMsg{workItemID: workItemID, err: err}
+	}
+}
+
+func moveWorkItemToSprint(client *AzureDevOpsClient, workItemID int, iterationPath string) tea.Cmd {
+	return func() tea.Msg {
+		err := client.MoveWorkItemToSprint(workItemID, iterationPath)
+		return sprintUpdatedMsg{workItemID: workItemID, err: err}
 	}
 }
