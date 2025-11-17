@@ -39,6 +39,8 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			return m.handleFindView(msg)
 		case statePickerView:
 			return m.handleStatePickerView(msg)
+		case batchEditMenuView:
+			return m.handleBatchEditMenuView(msg)
 		case editView:
 			return m.handleEditView(msg)
 		case createView:

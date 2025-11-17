@@ -20,6 +20,8 @@ func (m model) View() string {
 		return m.renderDetailView()
 	case statePickerView:
 		return m.renderStatePickerView()
+	case batchEditMenuView:
+		return m.renderBatchEditMenuView()
 	case filterView:
 		return m.renderFilterView()
 	case findView:

@@ -23,6 +23,7 @@ const (
 	createView
 	errorView
 	deleteConfirmView
+	batchEditMenuView
 )
 
 type appMode int

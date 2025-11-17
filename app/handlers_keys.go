@@ -132,14 +132,9 @@ func (m model) handleFindView(msg tea.KeyMsg) (model, tea.Cmd) {
 func (m model) handleStatePickerView(msg tea.KeyMsg) (model, tea.Cmd) {
 	switch msg.String() {
 	case "esc":
-		// Return to appropriate view
-		if len(m.batch.selectedItems) > 0 {
-			// Was batch operation, return to list
-			m.state = listView
-		} else {
-			// Was single item, return to detail
-			m.state = detailView
-		}
+		// Clear batch selection and return to list view
+		m.batch.selectedItems = make(map[int]bool)
+		m.state = listView
 		m.stateCursor = 0
 		return m, nil
 	case "up", "k":

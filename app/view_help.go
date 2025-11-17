@@ -28,15 +28,15 @@ func (m model) renderHelpView() string {
 	content.WriteString(m.styles.Key.Render("i") + m.styles.Desc.Render("Insert new item before current") + "\n")
 	content.WriteString(m.styles.Key.Render("a") + m.styles.Desc.Render("Append new item after current (or as first child if parent)") + "\n")
 	content.WriteString(m.styles.Key.Render("d") + m.styles.Desc.Render("Delete current item or selected items (with confirmation)") + "\n")
-	content.WriteString(m.styles.Key.Render("s") + m.styles.Desc.Render("Change state of selected items (batch operation)") + "\n")
+	content.WriteString(m.styles.Key.Render("e") + m.styles.Desc.Render("Edit current or selected items (shows menu: state, sprint, etc.)") + "\n")
 	content.WriteString(m.styles.Key.Render("/") + m.styles.Desc.Render("Filter items in current list") + "\n")
 	content.WriteString(m.styles.Key.Render("f") + m.styles.Desc.Render("Find items with dedicated query") + "\n\n")
 
 	// Detail view keybindings
 	content.WriteString(m.styles.SectionHeader.Render("Detail View") + "\n")
 	content.WriteString(m.styles.Key.Render("←/h, esc, backspace") + m.styles.Desc.Render("Back to list") + "\n")
-	content.WriteString(m.styles.Key.Render("e") + m.styles.Desc.Render("Edit item") + "\n")
-	content.WriteString(m.styles.Key.Render("s") + m.styles.Desc.Render("Change item state") + "\n\n")
+	content.WriteString(m.styles.Key.Render("e") + m.styles.Desc.Render("Edit item (shows menu: state, sprint, etc.)") + "\n")
+	content.WriteString(m.styles.Key.Render("s") + m.styles.Desc.Render("Quick change state (skips menu)") + "\n\n")
 
 	// State picker view keybindings
 	content.WriteString(m.styles.SectionHeader.Render("State Picker") + "\n")
@@ -56,11 +56,11 @@ func (m model) renderHelpView() string {
 	content.WriteString(m.styles.Key.Render("enter") + m.styles.Desc.Render("Show save/cancel hint") + "\n")
 	content.WriteString(m.styles.Key.Render("esc") + m.styles.Desc.Render("Cancel creation") + "\n\n")
 
-	// Batch operations
-	content.WriteString(m.styles.SectionHeader.Render("Batch Operations") + "\n")
+	// Edit operations
+	content.WriteString(m.styles.SectionHeader.Render("Edit Operations") + "\n")
 	content.WriteString(m.styles.Key.Render("space") + m.styles.Desc.Render("Select/deselect item (orange bar shows selection)") + "\n")
-	content.WriteString(m.styles.Key.Render("d") + m.styles.Desc.Render("Delete all selected items (with confirmation)") + "\n")
-	content.WriteString(m.styles.Key.Render("s") + m.styles.Desc.Render("Change state of all selected items") + "\n\n")
+	content.WriteString(m.styles.Key.Render("e") + m.styles.Desc.Render("Edit item(s) - shows menu for single or multiple items") + "\n")
+	content.WriteString(m.styles.Key.Render("d") + m.styles.Desc.Render("Delete item(s) - works for single or multiple items") + "\n\n")
 
 	// Footer with keybindings
 	keybindings := "?: close help • esc: close help • q: quit"

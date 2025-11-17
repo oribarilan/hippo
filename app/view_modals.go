@@ -9,12 +9,42 @@ func (m model) renderStatePickerView() string {
 	var content strings.Builder
 
 	// Title bar
-	titleText := "Select New State"
+	count := len(m.batch.selectedItems)
+	titleText := fmt.Sprintf("Change State (%d items)", count)
 	content.WriteString(m.renderTitleBar(titleText))
 
-	if m.selectedTask != nil {
-		content.WriteString(fmt.Sprintf("Current state: %s\n\n", m.selectedTask.State))
+	// Show list of items being edited
+	if count > 0 {
+		content.WriteString(m.styles.Section.Render("Editing items:") + "\n")
+
+		// Get all tasks from current list to display selected items
+		tasks := m.getVisibleTasks()
+		selectedCount := 0
+		maxDisplay := 3 // Limit display to avoid cluttering the screen
+
+		for _, task := range tasks {
+			if m.batch.selectedItems[task.ID] {
+				selectedCount++
+				if selectedCount <= maxDisplay {
+					itemText := fmt.Sprintf("#%d: %s", task.ID, task.Title)
+					if len(itemText) > 60 {
+						itemText = itemText[:57] + "..."
+					}
+					stateInfo := fmt.Sprintf("%s → ?", task.State)
+					content.WriteString(m.styles.Dim.Render(fmt.Sprintf("  • %s [%s]", itemText, stateInfo)) + "\n")
+				}
+			}
+		}
+
+		if selectedCount > maxDisplay {
+			remaining := selectedCount - maxDisplay
+			content.WriteString(m.styles.Dim.Render(fmt.Sprintf("  ... and %d more", remaining)) + "\n")
+		}
+
+		content.WriteString("\n")
 	}
+
+	content.WriteString("  Select new state:\n\n")
 
 	for i, state := range m.availableStates {
 		cursor := " "

@@ -102,7 +102,7 @@ func (m model) handleGlobalHotkeys(msg tea.KeyMsg) (model, tea.Cmd, bool) {
 		return m, nil, true
 
 	case "s":
-		// Change state - in detail view or list view (for batch)
+		// Change state - only in detail view for single items
 		if m.state == detailView && m.selectedTask != nil && m.client != nil {
 			// Single item state change from detail view
 			m.loading = true
@@ -111,28 +111,32 @@ func (m model) handleGlobalHotkeys(msg tea.KeyMsg) (model, tea.Cmd, bool) {
 				loadWorkItemStates(m.client, m.selectedTask.WorkItemType),
 				m.spinner.Tick,
 			), true
-		} else if m.state == listView && len(m.batch.selectedItems) > 0 && m.client != nil {
-			// Batch state change from list view
-			m.loading = true
-			m.statusMessage = "Loading states..."
-			// Use "Task" as default work item type for batch operations
-			return m, tea.Batch(
-				loadWorkItemStates(m.client, "Task"),
-				m.spinner.Tick,
-			), true
 		}
 		return m, nil, true
 
 	case "e":
-		// Enter edit mode - only in detail view
-		if m.state == detailView && m.selectedTask != nil {
-			// Populate edit fields with current values
-			m.edit.titleInput.SetValue(m.selectedTask.Title)
-			m.edit.descriptionInput.SetValue(m.selectedTask.Description)
-			m.edit.fieldCursor = 0
-			m.edit.titleInput.Focus()
-			m.edit.descriptionInput.Blur()
-			m.state = editView
+		// Edit - unified flow for both single and batch edit
+		if m.state == listView {
+			treeItems := m.getVisibleTreeItems()
+
+			// If no items are selected, select the current item
+			if len(m.batch.selectedItems) == 0 {
+				if len(treeItems) > 0 && m.ui.cursor < len(treeItems) {
+					itemID := treeItems[m.ui.cursor].WorkItem.ID
+					m.batch.selectedItems[itemID] = true
+				}
+			}
+
+			// Show batch edit menu if we have any selected items
+			if len(m.batch.selectedItems) > 0 {
+				m.stateCursor = 0 // Reset cursor for menu navigation
+				m.state = batchEditMenuView
+			}
+		} else if m.state == detailView && m.selectedTask != nil {
+			// In detail view, add current item to batch selection and show menu
+			m.batch.selectedItems[m.selectedTask.ID] = true
+			m.stateCursor = 0
+			m.state = batchEditMenuView
 		}
 		return m, nil, true
 
