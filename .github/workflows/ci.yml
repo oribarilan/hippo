@@ -1,0 +1,109 @@
+name: CI
+
+on:
+  push:
+    branches: [ main ]
+  pull_request:
+    branches: [ main ]
+
+jobs:
+  test:
+    name: Test
+    runs-on: ${{ matrix.os }}
+    strategy:
+      matrix:
+        os: [ubuntu-latest, macos-latest]
+        go-version: ['1.21', '1.22']
+    
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+
+    - name: Set up Go
+      uses: actions/setup-go@v5
+      with:
+        go-version: ${{ matrix.go-version }}
+        cache: true
+        cache-dependency-path: app/go.sum
+
+    - name: Verify dependencies
+      working-directory: ./app
+      run: go mod verify
+
+    - name: Check formatting
+      working-directory: ./app
+      run: |
+        if [ "$(gofmt -s -l . | wc -l)" -gt 0 ]; then
+          echo "The following files are not formatted:"
+          gofmt -s -l .
+          echo "Please run 'go fmt ./...' to format your code"
+          exit 1
+        fi
+
+    - name: Run go vet
+      working-directory: ./app
+      run: go vet ./...
+
+    - name: Download dependencies
+      working-directory: ./app
+      run: go mod download
+
+    - name: Run tests
+      working-directory: ./app
+      run: go test -v -race -coverprofile=coverage.out -covermode=atomic ./...
+
+    - name: Upload coverage to Codecov
+      if: matrix.os == 'ubuntu-latest' && matrix.go-version == '1.22'
+      uses: codecov/codecov-action@v4
+      with:
+        files: ./app/coverage.out
+        flags: unittests
+        fail_ci_if_error: false
+
+    - name: Run benchmarks
+      if: github.ref == 'refs/heads/main' && matrix.os == 'ubuntu-latest' && matrix.go-version == '1.22'
+      working-directory: ./app
+      run: go test -bench=. -benchmem -run=^$ ./...
+
+  build:
+    name: Build
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        goos: [linux, darwin, windows]
+        goarch: [amd64, arm64]
+        exclude:
+          # Windows ARM64 builds can be flaky
+          - goos: windows
+            goarch: arm64
+    
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+
+    - name: Set up Go
+      uses: actions/setup-go@v5
+      with:
+        go-version: '1.22'
+        cache: true
+        cache-dependency-path: app/go.sum
+
+    - name: Build binary
+      working-directory: ./app
+      env:
+        GOOS: ${{ matrix.goos }}
+        GOARCH: ${{ matrix.goarch }}
+      run: |
+        output_name=hippo-${{ matrix.goos }}-${{ matrix.goarch }}
+        if [ "${{ matrix.goos }}" = "windows" ]; then
+          output_name="${output_name}.exe"
+        fi
+        go build -v -o "$output_name" .
+        ls -lh "$output_name"
+
+    - name: Upload artifacts
+      uses: actions/upload-artifact@v4
+      with:
+        name: hippo-${{ matrix.goos }}-${{ matrix.goarch }}
+        path: app/hippo-*
+        retention-days: 7
