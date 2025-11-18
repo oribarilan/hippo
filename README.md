@@ -13,7 +13,6 @@ A terminal user interface (TUI) for Azure DevOps task management, built with Go 
 - changelog generation
 - changelog support in-app
 - add license file (MIT)
-- add CI for tests and linting
 - stylize the header bar
 - justfile
 
