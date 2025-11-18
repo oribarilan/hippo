@@ -418,8 +418,12 @@ func (m model) handleSprintsLoadedMsg(msg sprintsLoadedMsg) (model, tea.Cmd) {
 	}
 
 	if msg.err != nil {
-		m.err = fmt.Errorf("failed to load sprints: %w", msg.err)
+		m.statusMessage = fmt.Sprintf("Failed to load sprints: %v", msg.err)
 		m.loading = false
+		// Transition from loading screen to list view even on error
+		if m.state == loadingView {
+			m.state = listView
+		}
 		return m, nil
 	} else {
 		needsReload := len(m.sprints) == 0 || msg.forceReload // First time loading sprints OR forced reload
