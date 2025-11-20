@@ -56,11 +56,11 @@ func (m model) renderConfigWizardView() string {
 
 	// Team field
 	content.WriteString(m.styles.EditSection.Render(
-		m.styles.EditLabel.Render("Team (optional):") + "\n" +
+		m.styles.EditLabel.Render("Team:") + "\n" +
 			"  " + m.wizard.teamInput.View()))
 	content.WriteString("\n")
 	if m.wizard.fieldCursor == 2 {
-		content.WriteString(m.styles.EditHelp.Render("  Defaults to project name if not specified") + "\n")
+		content.WriteString(m.styles.EditHelp.Render("  Your Azure DevOps team name") + "\n")
 	}
 	content.WriteString("\n")
 

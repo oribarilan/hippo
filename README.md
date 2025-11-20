@@ -9,11 +9,8 @@ A terminal user interface (TUI) for Azure DevOps task management, built with Go 
 - In-app update check 
 - Use go-selfupdate if update available (and offer "skip version")
 
-- config file for what is now the .env variables (env variables for config locaaaaatn)
 - changelog generation
 - changelog support in-app
-- add license file (MIT)
-- stylize the header bar
 - justfile
 
 ## Features
@@ -37,8 +34,8 @@ A terminal user interface (TUI) for Azure DevOps task management, built with Go 
 ## Prerequisites
 
 - Go 1.21 or higher
-- Azure CLI installed and configured
-- Azure DevOps account
+- Azure CLI
+- Azure DevOps Board
 
 ## Setup
 
@@ -240,23 +237,23 @@ Environment variables are fully supported and useful for:
 
 Supported variables:
 ```bash
-export AZURE_DEVOPS_ORG_URL="https://dev.azure.com/your-org"
-export AZURE_DEVOPS_PROJECT="your-project"
-export AZURE_DEVOPS_TEAM="your-team"  # optional
+export HIPPO_ADO_ORG_URL="https://dev.azure.com/your-org"
+export HIPPO_ADO_PROJECT="your-project"
+export HIPPO_ADO_TEAM="your-team"
 ```
 
 Example: Override project in CI/CD:
 ```bash
 # Config file has your default project
 # Override just the project for this run
-export AZURE_DEVOPS_PROJECT="CI-Test-Project"
+export HIPPO_ADO_PROJECT="CI-Test-Project"
 ./hippo
 ```
 
 Example: Use `.env` file for development:
 ```bash
 # Create .env file
-echo "AZURE_DEVOPS_PROJECT=DevProject" > .env
+echo "HIPPO_ADO_PROJECT=DevProject" > .env
 
 # godotenv automatically loads .env
 ./hippo
@@ -282,7 +279,7 @@ echo "AZURE_DEVOPS_PROJECT=DevProject" > .env
 ./hippo --project "OtherProject"
 
 # Or use environment variables
-export AZURE_DEVOPS_PROJECT="OtherProject"
+export HIPPO_ADO_PROJECT="OtherProject"
 ./hippo
 
 # Reconfigure to different project permanently
@@ -295,8 +292,8 @@ export AZURE_DEVOPS_PROJECT="OtherProject"
 steps:
   - name: Run Hippo
     env:
-      AZURE_DEVOPS_ORG_URL: https://dev.azure.com/my-org
-      AZURE_DEVOPS_PROJECT: CI-Project
+      HIPPO_ADO_ORG_URL: https://dev.azure.com/my-org
+      HIPPO_ADO_PROJECT: CI-Project
     run: ./hippo
 ```
 
@@ -307,8 +304,9 @@ docker run -v ~/.config/hippo:/root/.config/hippo hippo
 
 # Option 2: Use environment variables (must provide ALL required fields)
 docker run \
-  -e AZURE_DEVOPS_ORG_URL="https://dev.azure.com/my-org" \
-  -e AZURE_DEVOPS_PROJECT="MyProject" \
+  -e HIPPO_ADO_ORG_URL="https://dev.azure.com/my-org" \
+  -e HIPPO_ADO_PROJECT="MyProject" \
+  -e HIPPO_ADO_TEAM="MyTeam" \
   hippo
 ```
 
@@ -324,9 +322,9 @@ If you previously used `.env` files for configuration:
    ```
 
 2. Enter the same values you had in your `.env` file:
-   - `AZURE_DEVOPS_ORG_URL` → `organization_url`
-   - `AZURE_DEVOPS_PROJECT` → `project`
-   - `AZURE_DEVOPS_TEAM` → `team`
+   - `HIPPO_ADO_ORG_URL` → `organization_url`
+   - `HIPPO_ADO_PROJECT` → `project`
+   - `HIPPO_ADO_TEAM` → `team`
 
 3. (Optional) Remove old `.env` file:
    ```bash

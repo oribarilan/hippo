@@ -79,15 +79,15 @@ func LoadConfig(flags *FlagConfig) (*Config, *ConfigSource, error) {
 	}
 
 	// 2. Merge with environment variables (non-empty overrides)
-	if orgURL := os.Getenv("AZURE_DEVOPS_ORG_URL"); orgURL != "" {
+	if orgURL := os.Getenv("HIPPO_ADO_ORG_URL"); orgURL != "" {
 		config.OrganizationURL = orgURL
 		source.OrganizationURL = "env"
 	}
-	if project := os.Getenv("AZURE_DEVOPS_PROJECT"); project != "" {
+	if project := os.Getenv("HIPPO_ADO_PROJECT"); project != "" {
 		config.Project = project
 		source.Project = "env"
 	}
-	if team := os.Getenv("AZURE_DEVOPS_TEAM"); team != "" {
+	if team := os.Getenv("HIPPO_ADO_TEAM"); team != "" {
 		config.Team = team
 		source.Team = "env"
 	}
@@ -206,10 +206,8 @@ func ValidateConfig(config *Config) error {
 	if config.Project == "" {
 		return fmt.Errorf("project is required")
 	}
-
-	// Default team to project name if not set
 	if config.Team == "" {
-		config.Team = config.Project
+		return fmt.Errorf("team is required")
 	}
 
 	return nil

@@ -23,14 +23,14 @@ func TestValidateConfig(t *testing.T) {
 			wantErr: false,
 		},
 		{
-			name: "valid config with team defaulting to project",
+			name: "missing team",
 			config: &Config{
 				ConfigVersion:   1,
 				OrganizationURL: "https://dev.azure.com/org",
 				Project:         "project",
 				Team:            "",
 			},
-			wantErr: false,
+			wantErr: true,
 		},
 		{
 			name: "missing organization URL",
@@ -52,17 +52,9 @@ func TestValidateConfig(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			// Store original team value
-			originalTeam := tt.config.Team
-
 			err := ValidateConfig(tt.config)
 			if (err != nil) != tt.wantErr {
 				t.Errorf("ValidateConfig() error = %v, wantErr %v", err, tt.wantErr)
-			}
-
-			// Check that team defaults to project when empty
-			if err == nil && originalTeam == "" && tt.config.Team != tt.config.Project {
-				t.Errorf("ValidateConfig() should set team to project name when empty, got %v, want %v", tt.config.Team, tt.config.Project)
 			}
 		})
 	}
@@ -148,8 +140,8 @@ team: "file-team"
 
 	// Test 2: Environment variable overrides config file
 	t.Run("env var overrides config file", func(t *testing.T) {
-		os.Setenv("AZURE_DEVOPS_PROJECT", "env-project")
-		defer os.Unsetenv("AZURE_DEVOPS_PROJECT")
+		os.Setenv("HIPPO_ADO_PROJECT", "env-project")
+		defer os.Unsetenv("HIPPO_ADO_PROJECT")
 
 		flags := &FlagConfig{}
 		flags.ConfigPath = &configPath
@@ -177,8 +169,8 @@ team: "file-team"
 
 	// Test 3: Flag overrides everything
 	t.Run("flag overrides everything", func(t *testing.T) {
-		os.Setenv("AZURE_DEVOPS_PROJECT", "env-project")
-		defer os.Unsetenv("AZURE_DEVOPS_PROJECT")
+		os.Setenv("HIPPO_ADO_PROJECT", "env-project")
+		defer os.Unsetenv("HIPPO_ADO_PROJECT")
 
 		flagProject := "flag-project"
 		flags := &FlagConfig{
@@ -203,8 +195,8 @@ team: "file-team"
 
 	// Test 4: Empty env var is ignored
 	t.Run("empty env var is ignored", func(t *testing.T) {
-		os.Setenv("AZURE_DEVOPS_PROJECT", "")
-		defer os.Unsetenv("AZURE_DEVOPS_PROJECT")
+		os.Setenv("HIPPO_ADO_PROJECT", "")
+		defer os.Unsetenv("HIPPO_ADO_PROJECT")
 
 		flags := &FlagConfig{}
 		flags.ConfigPath = &configPath
@@ -279,9 +271,9 @@ team: "test-team"
 
 func TestLoadConfig_NotFound(t *testing.T) {
 	// Clear any environment variables that might interfere
-	os.Unsetenv("AZURE_DEVOPS_ORG_URL")
-	os.Unsetenv("AZURE_DEVOPS_PROJECT")
-	os.Unsetenv("AZURE_DEVOPS_TEAM")
+	os.Unsetenv("HIPPO_ADO_ORG_URL")
+	os.Unsetenv("HIPPO_ADO_PROJECT")
+	os.Unsetenv("HIPPO_ADO_TEAM")
 
 	flags := &FlagConfig{}
 	nonExistentPath := "/nonexistent/config.yaml"
