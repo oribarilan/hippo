@@ -8,6 +8,7 @@ require (
 	github.com/charmbracelet/lipgloss v0.9.1
 	github.com/joho/godotenv v1.5.1
 	github.com/microsoft/azure-devops-go-api/azuredevops v1.0.0-b5
+	gopkg.in/yaml.v3 v3.0.1
 )
 
 require (

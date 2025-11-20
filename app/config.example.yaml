@@ -1,0 +1,20 @@
+# Hippo Configuration File
+# Location: ~/.config/hippo/config.yaml (macOS/Linux)
+#           %APPDATA%\hippo\config.yaml (Windows)
+
+# Configuration version (do not modify manually)
+config_version: 1
+
+# Azure DevOps Organization URL (required)
+# Format: https://dev.azure.com/your-organization
+organization_url: "https://dev.azure.com/example-org"
+
+# Project name (required)
+project: "MyProject"
+
+# Team name (optional, defaults to project name)
+team: "MyTeam"
+
+# Future settings (not yet implemented)
+# default_sprint: "current"
+# cache_duration: 300

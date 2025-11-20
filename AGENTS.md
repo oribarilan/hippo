@@ -47,6 +47,28 @@ Examples:
 
 ## Architecture Basics
 
+**Configuration:**
+
+Hippo uses YAML configuration files stored in:
+- macOS/Linux: `~/.config/hippo/config.yaml`
+- Windows: `%APPDATA%\hippo\config.yaml`
+
+Configuration loading and merging precedence (highest to lowest):
+1. Command-line flags (temporary overrides)
+2. Environment variables (CI/CD, development)
+3. Config file (persistent configuration)
+
+Setup wizard (`--init`):
+- Integrated as a TUI view (configWizardView)
+- Starts automatically if no config exists
+- Exits to loading view after saving config
+
+Key configuration files:
+- `config.go` - Configuration loading, merging, and validation
+- `view_config_wizard.go` - Integrated config wizard view
+- `flags.go` - CLI flag parsing
+- `client_auth.go` - Azure CLI token authentication
+
 **Layout Pattern:** All views use 3-part structure:
 ```go
 func (m model) renderSomeView() string {
@@ -61,6 +83,9 @@ func (m model) renderSomeView() string {
 **Files:**
 - `main.go` - Bubbletea MVC (model, update, view)
 - `client.go` - Azure DevOps API client
+- `config.go` - Configuration management
+- `view_config_wizard.go` - Integrated setup wizard view
+- `flags.go` - CLI flags
 
 **Color Palette:**
 - Purple #62 (headers/selections), White #230 (text), Gray #241 (borders)

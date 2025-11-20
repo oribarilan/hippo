@@ -3,7 +3,6 @@ package main
 import (
 	"context"
 	"fmt"
-	"os"
 
 	"github.com/microsoft/azure-devops-go-api/azuredevops"
 	"github.com/microsoft/azure-devops-go-api/azuredevops/work"
@@ -26,17 +25,17 @@ type AzureDevOpsClient struct {
 }
 
 // NewAzureDevOpsClient creates a new Azure DevOps client with authentication from Azure CLI
-func NewAzureDevOpsClient() (*AzureDevOpsClient, error) {
-	// Read environment variables
-	organizationURL := os.Getenv("AZURE_DEVOPS_ORG_URL")
-	project := os.Getenv("AZURE_DEVOPS_PROJECT")
-	team := os.Getenv("AZURE_DEVOPS_TEAM")
+func NewAzureDevOpsClient(config *Config) (*AzureDevOpsClient, error) {
+	// Use config values
+	organizationURL := config.OrganizationURL
+	project := config.Project
+	team := config.Team
 
 	if organizationURL == "" {
-		return nil, fmt.Errorf("AZURE_DEVOPS_ORG_URL environment variable is not set")
+		return nil, fmt.Errorf("organization_url is not set")
 	}
 	if project == "" {
-		return nil, fmt.Errorf("AZURE_DEVOPS_PROJECT environment variable is not set")
+		return nil, fmt.Errorf("project is not set")
 	}
 
 	// If team is not set, default to project name

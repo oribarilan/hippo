@@ -62,6 +62,8 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			return m.handleDeleteConfirmView(msg)
 		case moveChildrenConfirmView:
 			return m.handleMoveChildrenConfirmView(msg)
+		case configWizardView:
+			return m.handleConfigWizardView(msg)
 		case listView:
 			// Try global hotkeys first
 			newModel, cmd, handled := m.handleGlobalHotkeys(msg)
