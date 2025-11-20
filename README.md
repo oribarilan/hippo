@@ -57,16 +57,21 @@ az login
 go mod download
 ```
 
-4. **Set up your Azure DevOps environment variables**:
+4. **Build and run Hippo**:
 ```bash
-export AZURE_DEVOPS_ORG_URL="https://dev.azure.com/your-organization"
-export AZURE_DEVOPS_PROJECT="your-project-name"
-export AZURE_DEVOPS_TEAM="your-team-name"
+cd app
+go build -o hippo
+./hippo
 ```
 
-Note: If `AZURE_DEVOPS_TEAM` is not set, it defaults to the project name.
+On first run, the setup wizard will start automatically and prompt you for:
+- Azure DevOps organization URL (e.g., `https://dev.azure.com/your-org`)
+- Project name
+- Team name (optional)
 
-To make this permanent, add these to your `~/.bashrc` or `~/.zshrc`.
+Your configuration is saved to `~/.config/hippo/config.yaml`.
+
+To reconfigure later, run: `./hippo --init`
 
 ## Building
 
@@ -154,14 +159,188 @@ The test suite includes:
 
 ## Configuration
 
-You can create a `.env` file in the project root or set environment variables:
-```
-AZURE_DEVOPS_ORG_URL=https://dev.azure.com/your-organization
-AZURE_DEVOPS_PROJECT=your-project-name
-AZURE_DEVOPS_TEAM=your-team-name
+### Configuration File
+
+Hippo stores configuration in a standard location:
+- **macOS/Linux:** `~/.config/hippo/config.yaml`
+- **Windows:** `%APPDATA%\hippo\config.yaml`
+
+Example configuration:
+```yaml
+config_version: 1
+organization_url: "https://dev.azure.com/your-org"
+project: "your-project"
+team: "your-team"  # optional
 ```
 
-The app uses Azure CLI for authentication, so no PAT is needed!
+See `app/config.example.yaml` for a complete example.
+
+### Configuration Sources & Precedence
+
+Hippo supports multiple configuration sources with the following precedence (highest to lowest):
+
+1. **Command-line flags** - Temporary overrides for single runs
+2. **Environment variables** - For CI/CD, development, containers
+3. **Config file** - Persistent user configuration
+
+This means you can have a config file for daily use, but override values with environment variables in CI/CD or flags for quick tests.
+
+### First-Time Setup
+
+Simply run Hippo, and the setup wizard will start automatically:
+```bash
+./hippo
+```
+
+The wizard will prompt you for your Azure DevOps organization URL, project name, and team name (optional).
+
+### Reconfiguring
+
+To update your configuration, force the wizard to run:
+```bash
+./hippo --init
+```
+
+Or manually edit the config file:
+```bash
+# macOS/Linux
+vim ~/.config/hippo/config.yaml
+
+# Windows
+notepad %APPDATA%\hippo\config.yaml
+```
+
+### Command-Line Flags
+
+Override configuration for a single run:
+```bash
+# Override organization and project
+hippo --org https://dev.azure.com/other-org --project OtherProject
+
+# Use a different config file
+hippo --config /path/to/custom-config.yaml
+```
+
+Available flags:
+- `--org` - Override organization URL
+- `--project` - Override project name
+- `--team` - Override team name
+- `--config` - Use custom config file path
+- `--init` - Run setup wizard
+- `--version` - Show version
+- `--help` - Show help
+
+### Environment Variables
+
+Environment variables are fully supported and useful for:
+- **CI/CD pipelines** (GitHub Actions, Azure Pipelines, etc.)
+- **Docker containers**
+- **Local development** with `.env` files
+- **Testing** different configurations
+
+Supported variables:
+```bash
+export AZURE_DEVOPS_ORG_URL="https://dev.azure.com/your-org"
+export AZURE_DEVOPS_PROJECT="your-project"
+export AZURE_DEVOPS_TEAM="your-team"  # optional
+```
+
+Example: Override project in CI/CD:
+```bash
+# Config file has your default project
+# Override just the project for this run
+export AZURE_DEVOPS_PROJECT="CI-Test-Project"
+./hippo
+```
+
+Example: Use `.env` file for development:
+```bash
+# Create .env file
+echo "AZURE_DEVOPS_PROJECT=DevProject" > .env
+
+# godotenv automatically loads .env
+./hippo
+```
+
+### Configuration Examples
+
+**Example 1: Single project user**
+```bash
+# First run - wizard starts automatically
+./hippo
+
+# Daily use
+./hippo
+```
+
+**Example 2: Multiple projects**
+```bash
+# First run sets up main project (wizard runs automatically)
+./hippo
+
+# Switch projects temporarily
+./hippo --project "OtherProject"
+
+# Or use environment variables
+export AZURE_DEVOPS_PROJECT="OtherProject"
+./hippo
+
+# Reconfigure to different project permanently
+./hippo --init
+```
+
+**Example 3: CI/CD pipeline**
+```yaml
+# .github/workflows/check-work-items.yml
+steps:
+  - name: Run Hippo
+    env:
+      AZURE_DEVOPS_ORG_URL: https://dev.azure.com/my-org
+      AZURE_DEVOPS_PROJECT: CI-Project
+    run: ./hippo
+```
+
+**Example 4: Docker container**
+```bash
+# Option 1: Mount config file from host
+docker run -v ~/.config/hippo:/root/.config/hippo hippo
+
+# Option 2: Use environment variables (must provide ALL required fields)
+docker run \
+  -e AZURE_DEVOPS_ORG_URL="https://dev.azure.com/my-org" \
+  -e AZURE_DEVOPS_PROJECT="MyProject" \
+  hippo
+```
+
+### Migrating from .env Files
+
+If you previously used `.env` files for configuration:
+
+**Option 1: Switch to config file (recommended for regular use)**
+
+1. Run the setup wizard:
+   ```bash
+   hippo --init
+   ```
+
+2. Enter the same values you had in your `.env` file:
+   - `AZURE_DEVOPS_ORG_URL` → `organization_url`
+   - `AZURE_DEVOPS_PROJECT` → `project`
+   - `AZURE_DEVOPS_TEAM` → `team`
+
+3. (Optional) Remove old `.env` file:
+   ```bash
+   rm .env
+   ```
+
+**Option 2: Keep using environment variables**
+
+Environment variables are fully supported! You can continue using `.env` files, environment variables, or a mix of both. This is particularly useful for:
+- Development environments
+- CI/CD pipelines
+- Docker deployments
+
+No migration needed - your existing setup will continue to work.
 
 ## Project Structure
 
@@ -290,18 +469,51 @@ func (m model) renderNewView() string {
 
 ## Troubleshooting
 
+### First Run Setup
+
+If you need to reconfigure or update your settings, run:
+```bash
+hippo --init
+```
+
+The setup wizard will guide you through the configuration process.
+
+### Configuration file location
+
+Your config file is located at:
+- **macOS/Linux:** `~/.config/hippo/config.yaml`
+- **Windows:** `%APPDATA%\hippo\config.yaml`
+
+To use a custom location:
+```bash
+hippo --config /path/to/custom-config.yaml
+```
+
+You can manually edit this file if needed. Required fields are:
+- `config_version: 1`
+- `organization_url: "https://dev.azure.com/your-org"`
+- `project: "your-project"`
+
 ### "failed to get Azure CLI token"
 - Make sure you're logged in: `az login`
 - Check your Azure CLI installation: `az --version`
 - Verify you have access to Azure DevOps
 
-### "AZURE_DEVOPS_* environment variable is not set"
-Make sure you've exported both required environment variables (ORG_URL, PROJECT, and optionally TEAM).
-
 ### "failed to query work items"
 - Verify your organization URL is correct
 - Ensure your project name matches exactly (case-sensitive)
 - Make sure your Azure account has access to the Azure DevOps project
+
+### Testing configuration
+
+Test your configuration with flag overrides:
+```bash
+# Test with different project
+hippo --project "TestProject"
+
+# Test with different organization
+hippo --org "https://dev.azure.com/test-org" --project "TestProject"
+```
 
 ### Empty list
 If you see "No tasks found", the query might not match any work items. Check that:

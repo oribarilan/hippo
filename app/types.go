@@ -26,6 +26,7 @@ const (
 	batchEditMenuView
 	sprintPickerView
 	moveChildrenConfirmView
+	configWizardView
 )
 
 type appMode int
@@ -116,7 +117,20 @@ type SprintMoveState struct {
 	skippedCount    int        // Number of completed items that were skipped
 }
 
+// WizardState contains state for the configuration wizard
+type WizardState struct {
+	fieldCursor  int // Which field is currently focused (0=org, 1=project, 2=team)
+	orgInput     textinput.Model
+	projectInput textinput.Model
+	teamInput    textinput.Model
+	err          string // Validation error message
+}
+
 type model struct {
+	// Configuration
+	config       *Config
+	configSource *ConfigSource // Track where config values came from
+
 	// WorkItemList instances - component-based architecture
 	sprintLists  map[sprintTab]*WorkItemList
 	backlogLists map[backlogTab]*WorkItemList
@@ -134,8 +148,6 @@ type model struct {
 	stateCursor       int
 	availableStates   []string
 	stateCategories   map[string]string // Map of state name to category (Proposed, InProgress, Completed, etc.)
-	organizationURL   string
-	projectName       string
 	statusMessage     string
 	lastActionLog     string    // Log line showing the result of the last action
 	lastActionTime    time.Time // Timestamp of the last action
@@ -153,6 +165,7 @@ type model struct {
 	batch      BatchState
 	filter     FilterState
 	sprintMove SprintMoveState
+	wizard     WizardState
 
 	// UI styles
 	styles Styles // Centralized styles for the application

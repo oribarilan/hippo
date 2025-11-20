@@ -32,6 +32,7 @@ go.work.sum
 # .vscode/
 
 .env
+.env.dev
 hippo
 *.exe
 *.dll

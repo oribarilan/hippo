@@ -98,7 +98,7 @@ func (m model) handleGlobalHotkeys(msg tea.KeyMsg) (model, tea.Cmd, bool) {
 			}
 		}
 		if workItemID > 0 {
-			openInBrowser(m.organizationURL, m.projectName, workItemID)
+			openInBrowser(m.config.OrganizationURL, m.config.Project, workItemID)
 			m.setActionLog(fmt.Sprintf("Opened #%d in browser", workItemID))
 		}
 		return m, nil, true

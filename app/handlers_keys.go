@@ -540,3 +540,120 @@ func (m model) handleDetailViewNav(msg tea.KeyMsg) (model, tea.Cmd) {
 	}
 	return m, nil
 }
+
+// handleConfigWizardView handles keyboard input in the config wizard view
+func (m model) handleConfigWizardView(msg tea.KeyMsg) (model, tea.Cmd) {
+	var cmd tea.Cmd
+
+	switch msg.String() {
+	case "ctrl+c", "esc":
+		// Cancel wizard and quit the application
+		return m, tea.Quit
+
+	case "tab":
+		// Move to next field
+		m.wizard.fieldCursor = (m.wizard.fieldCursor + 1) % 3
+		m.focusWizardField()
+		return m, nil
+
+	case "shift+tab":
+		// Move to previous field
+		m.wizard.fieldCursor--
+		if m.wizard.fieldCursor < 0 {
+			m.wizard.fieldCursor = 2
+		}
+		m.focusWizardField()
+		return m, nil
+
+	case "enter":
+		// Validate and save configuration
+		orgURL := strings.TrimSpace(m.wizard.orgInput.Value())
+		project := strings.TrimSpace(m.wizard.projectInput.Value())
+		team := strings.TrimSpace(m.wizard.teamInput.Value())
+
+		// Validate organization URL
+		if orgURL == "" {
+			m.wizard.err = "Organization URL is required"
+			m.wizard.fieldCursor = 0
+			m.focusWizardField()
+			return m, nil
+		}
+		if !strings.HasPrefix(orgURL, "https://") {
+			m.wizard.err = "Organization URL must start with https://"
+			m.wizard.fieldCursor = 0
+			m.focusWizardField()
+			return m, nil
+		}
+
+		// Validate project
+		if project == "" {
+			m.wizard.err = "Project name is required"
+			m.wizard.fieldCursor = 1
+			m.focusWizardField()
+			return m, nil
+		}
+
+		// Team is optional, defaults to project if empty
+		if team == "" {
+			team = project
+		}
+
+		// Save configuration
+		newConfig := &Config{
+			ConfigVersion:   1,
+			OrganizationURL: orgURL,
+			Project:         project,
+			Team:            team,
+		}
+
+		if err := SaveConfig(newConfig); err != nil {
+			m.wizard.err = fmt.Sprintf("Failed to save config: %v", err)
+			return m, nil
+		}
+
+		// Update model config and reinitialize client
+		m.config = newConfig
+
+		// Update config source to reflect that all values came from file
+		configPath, _ := GetConfigPath()
+		m.configSource = &ConfigSource{
+			OrganizationURL: "file",
+			Project:         "file",
+			Team:            "file",
+			ConfigPath:      configPath,
+		}
+
+		client, err := NewAzureDevOpsClient(m.config)
+		if err != nil {
+			m.err = fmt.Errorf("failed to initialize client: %w", err)
+			return m, nil
+		}
+
+		// Set client and transition to loading view
+		m.client = client
+		m.loading = true
+		m.state = loadingView
+		m.initialLoading = 3 // Loading 3 sprints
+
+		// Start loading data
+		return m, tea.Batch(
+			loadTasks(client),
+			loadSprints(client),
+			m.spinner.Tick,
+		)
+
+	default:
+		// Update the focused input field
+		switch m.wizard.fieldCursor {
+		case 0:
+			m.wizard.orgInput, cmd = m.wizard.orgInput.Update(msg)
+		case 1:
+			m.wizard.projectInput, cmd = m.wizard.projectInput.Update(msg)
+		case 2:
+			m.wizard.teamInput, cmd = m.wizard.teamInput.Update(msg)
+		}
+		// Clear error when user starts typing
+		m.wizard.err = ""
+		return m, cmd
+	}
+}

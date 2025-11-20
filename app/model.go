@@ -430,3 +430,21 @@ func (m *model) focusEditField() {
 		m.edit.descriptionInput.Focus()
 	}
 }
+
+// focusWizardField focuses the appropriate wizard field based on fieldCursor
+func (m *model) focusWizardField() {
+	// Blur all fields first
+	m.wizard.orgInput.Blur()
+	m.wizard.projectInput.Blur()
+	m.wizard.teamInput.Blur()
+
+	// Focus the selected field
+	switch m.wizard.fieldCursor {
+	case 0:
+		m.wizard.orgInput.Focus()
+	case 1:
+		m.wizard.projectInput.Focus()
+	case 2:
+		m.wizard.teamInput.Focus()
+	}
+}
