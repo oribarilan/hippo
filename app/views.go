@@ -280,9 +280,9 @@ func buildSourceInfo(source *ConfigSource) string {
 			case "file":
 				if source.ConfigPath != "" {
 					displayPath := abbreviateHomePath(source.ConfigPath)
-					sourceDesc = fmt.Sprintf("Source:📄%s", displayPath)
+					sourceDesc = fmt.Sprintf("Source:%s", displayPath)
 				} else {
-					sourceDesc = "Source:📄file"
+					sourceDesc = "Source:file"
 				}
 			}
 		}
@@ -298,9 +298,9 @@ func buildSourceInfo(source *ConfigSource) string {
 		if source.OrganizationURL == "file" || source.Project == "file" || source.Team == "file" {
 			if source.ConfigPath != "" {
 				displayPath := abbreviateHomePath(source.ConfigPath)
-				srcParts = append(srcParts, fmt.Sprintf("📄%s", displayPath))
+				srcParts = append(srcParts, displayPath)
 			} else {
-				srcParts = append(srcParts, "📄file")
+				srcParts = append(srcParts, "file")
 			}
 		}
 		if len(srcParts) > 0 {

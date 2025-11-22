@@ -649,12 +649,12 @@ func TestAdjustScrollOffset(t *testing.T) {
 				m.currentTab = currentSprint
 				m.sprints = make(map[sprintTab]*Sprint)
 			},
-			// With terminal height 30, fixed height = 11, content height = 19
+			// With terminal height 30, fixed height = 10, content height = 20
 			// Cursor at 30, scroll at 0 means cursor is at position 30
-			// Condition: 30 >= 0 + 19 (TRUE, cursor is below visible area)
-			// New scroll = 30 - 19 + 1 = 12
-			expectedScrollMin: 12,
-			expectedScrollMax: 12,
+			// Condition: 30 >= 0 + 20 (TRUE, cursor is below visible area)
+			// New scroll = 30 - 20 + 1 = 11
+			expectedScrollMin: 11,
+			expectedScrollMax: 11,
 		},
 		{
 			name:           "Cursor in visible area - no scroll",

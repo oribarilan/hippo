@@ -207,9 +207,24 @@ func (m model) getContentHeight() int {
 	// - Mode selector: 2 lines (modes + blank line)
 	// - Tab selector: 2 lines (tabs + blank line)
 	// - Hint (if present): 2 lines (hint + blank line)
-	// - Footer: 4 lines (blank + action log + separator + keybindings)
+	// - Footer:
+	//   * 1 blank line
+	//   * 0-1 action log line (if present)
+	//   * 1 separator line
+	//   * 1 keybindings line
+	//   * 2 config bar lines (blank + bar, if config exists)
 
-	fixedHeight := 3 + 2 + 2 + 4 // = 11 lines minimum
+	fixedHeight := 3 + 2 + 2 // = 7 lines for title, mode, tabs
+
+	// Footer lines
+	footerLines := 3 // blank + separator + keybindings (minimum)
+	if m.lastActionLog != "" {
+		footerLines++ // action log line
+	}
+	if m.config != nil && m.configSource != nil {
+		footerLines += 2 // blank line + config bar
+	}
+	fixedHeight += footerLines
 
 	// Add hint lines if present
 	if m.getTabHint() != "" {
