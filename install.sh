@@ -2,7 +2,7 @@
 set -e
 
 # Hippo installer script
-# Usage: curl -sSL https://raw.githubusercontent.com/orbarila/hippo/main/install.sh | bash
+# Usage: curl -sSL https://raw.githubusercontent.com/oribarilan/hippo/main/install.sh | bash
 
 # Color output
 RED='\033[0;31m'
@@ -11,7 +11,7 @@ YELLOW='\033[1;33m'
 NC='\033[0m' # No Color
 
 # Configuration
-REPO="orbarila/hippo"
+REPO="oribarilan/hippo"
 BINARY_NAME="hippo"
 
 # Detect OS and architecture

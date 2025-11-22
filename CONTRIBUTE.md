@@ -29,7 +29,7 @@ Thank you for your interest in contributing to Hippo! This guide will help you s
 
 1. **Clone the repository**:
 ```bash
-git clone https://github.com/orbarila/hippo.git
+git clone https://github.com/oribarilan/hippo.git
 cd hippo
 ```
 
@@ -318,9 +318,9 @@ git push origin v0.3.0
    - Auto-generates changelog from commit messages
 
 4. **Monitor the release**:
-   - Go to [GitHub Actions](https://github.com/orbarila/hippo/actions)
+   - Go to [GitHub Actions](https://github.com/oribarilan/hippo/actions)
    - Watch the "Release" workflow
-   - Once complete, verify the release at [Releases](https://github.com/orbarila/hippo/releases)
+   - Once complete, verify the release at [Releases](https://github.com/oribarilan/hippo/releases)
 
 ### Version Format
 
@@ -430,8 +430,8 @@ git push origin feature/your-feature-name
 
 ## Getting Help
 
-- **Issues:** [GitHub Issues](https://github.com/orbarila/hippo/issues)
-- **Discussions:** [GitHub Discussions](https://github.com/orbarila/hippo/discussions)
+- **Issues:** [GitHub Issues](https://github.com/oribarilan/hippo/issues)
+- **Discussions:** [GitHub Discussions](https://github.com/oribarilan/hippo/discussions)
 - **Documentation:** See [AGENTS.md](./AGENTS.md) for detailed architecture
 
 ## License

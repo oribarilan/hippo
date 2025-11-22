@@ -32,7 +32,7 @@ A terminal user interface (TUI) for Azure DevOps task management, built with Go 
 Install Hippo with a single command:
 
 ```bash
-curl -sSL https://raw.githubusercontent.com/orbarila/hippo/main/install.sh | bash
+curl -sSL https://raw.githubusercontent.com/oribarilan/hippo/main/install.sh | bash
 ```
 
 The installer will:
@@ -45,12 +45,12 @@ The installer will:
 
 **Custom installation directory:**
 ```bash
-curl -sSL https://raw.githubusercontent.com/orbarila/hippo/main/install.sh | INSTALL_DIR=/custom/path bash
+curl -sSL https://raw.githubusercontent.com/oribarilan/hippo/main/install.sh | INSTALL_DIR=/custom/path bash
 ```
 
 **Note:** On macOS, you may need to run with `sudo` if `/usr/local/bin` requires elevated permissions, or specify a user directory:
 ```bash
-curl -sSL https://raw.githubusercontent.com/orbarila/hippo/main/install.sh | INSTALL_DIR=$HOME/.local/bin bash
+curl -sSL https://raw.githubusercontent.com/oribarilan/hippo/main/install.sh | INSTALL_DIR=$HOME/.local/bin bash
 ```
 
 **Important:** The quick install will be available once the first release (v0.1.0) is published. Until then, use [Building from Source](#building-from-source).
@@ -60,7 +60,7 @@ curl -sSL https://raw.githubusercontent.com/orbarila/hippo/main/install.sh | INS
 If you prefer to download and install manually:
 
 1. **Download the latest release** for your platform from:
-   [https://github.com/orbarila/hippo/releases/latest](https://github.com/orbarila/hippo/releases/latest)
+   [https://github.com/oribarilan/hippo/releases/latest](https://github.com/oribarilan/hippo/releases/latest)
 
 2. **Extract the archive:**
    ```bash
@@ -95,7 +95,7 @@ If you prefer to download and install manually:
 
 1. **Clone and build**:
 ```bash
-git clone https://github.com/orbarila/hippo.git
+git clone https://github.com/oribarilan/hippo.git
 cd hippo/app
 go build -o hippo
 ```
