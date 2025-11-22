@@ -83,7 +83,9 @@ get_latest_version() {
 
 # Download and install
 install_binary() {
-    local archive_name="${BINARY_NAME}_${VERSION}_${OS}_${ARCH}"
+    # Remove 'v' prefix from version for archive name (v0.1.0 -> 0.1.0)
+    local version_without_v="${VERSION#v}"
+    local archive_name="${BINARY_NAME}_${version_without_v}_${OS}_${ARCH}"
     
     if [ "$OS" = "windows" ]; then
         archive_name="${archive_name}.zip"
