@@ -31,11 +31,11 @@ func getAzureCliToken() (string, error) {
 func main() {
 	_ = godotenv.Load()
 
-	organizationURL := os.Getenv("AZURE_DEVOPS_ORG_URL")
-	project := os.Getenv("AZURE_DEVOPS_PROJECT")
+	organizationURL := os.Getenv("HIPPO_ADO_ORG_URL")
+	project := os.Getenv("HIPPO_ADO_PROJECT")
 
 	if organizationURL == "" || project == "" {
-		fmt.Println("Error: AZURE_DEVOPS_ORG_URL and AZURE_DEVOPS_PROJECT must be set in .env")
+		fmt.Println("Error: HIPPO_ADO_ORG_URL and HIPPO_ADO_PROJECT must be set in .env")
 		os.Exit(1)
 	}
 

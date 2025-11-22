@@ -102,45 +102,45 @@ func (m model) renderListView() string {
 	treeItems := m.getVisibleTreeItems()
 	if len(treeItems) == 0 {
 		content.WriteString("  No tasks found.\n")
-	}
+	} else {
+		// Calculate visible range based on scroll offset
+		contentHeight := m.getContentHeight()
+		startIdx := m.ui.scrollOffset
+		endIdx := m.ui.scrollOffset + contentHeight
 
-	// Calculate visible range based on scroll offset
-	contentHeight := m.getContentHeight()
-	startIdx := m.ui.scrollOffset
-	endIdx := m.ui.scrollOffset + contentHeight
-
-	// Total items including potential "Load More" item
-	totalItems := len(treeItems)
-	if m.hasMoreItems() {
-		totalItems++
-	}
-
-	// Clamp end index
-	if endIdx > totalItems {
-		endIdx = totalItems
-	}
-
-	// Render only visible items
-	for i := startIdx; i < endIdx; i++ {
-		// Check if this is the "Load More" item
-		if i >= len(treeItems) {
-			// This is the "Load More" item
-			if m.hasMoreItems() {
-				remaining := m.getRemainingCount()
-				loadMoreIdx := len(treeItems)
-				isSelected := m.ui.cursor == loadMoreIdx
-				loadMoreText := m.renderLoadMoreItem(isSelected, remaining, m.loadingMore)
-				content.WriteString(loadMoreText + "\n")
-			}
-			continue
+		// Total items including potential "Load More" item
+		totalItems := len(treeItems)
+		if m.hasMoreItems() {
+			totalItems++
 		}
 
-		treeItem := treeItems[i]
-		isSelected := m.ui.cursor == i
-		isBatchSelected := m.batch.selectedItems[treeItem.WorkItem.ID]
+		// Clamp end index
+		if endIdx > totalItems {
+			endIdx = totalItems
+		}
 
-		line := m.renderTreeItemList(treeItem, isSelected, isBatchSelected)
-		content.WriteString(line + "\n")
+		// Render only visible items
+		for i := startIdx; i < endIdx; i++ {
+			// Check if this is the "Load More" item
+			if i >= len(treeItems) {
+				// This is the "Load More" item
+				if m.hasMoreItems() {
+					remaining := m.getRemainingCount()
+					loadMoreIdx := len(treeItems)
+					isSelected := m.ui.cursor == loadMoreIdx
+					loadMoreText := m.renderLoadMoreItem(isSelected, remaining, m.loadingMore)
+					content.WriteString(loadMoreText + "\n")
+				}
+				continue
+			}
+
+			treeItem := treeItems[i]
+			isSelected := m.ui.cursor == i
+			isBatchSelected := m.batch.selectedItems[treeItem.WorkItem.ID]
+
+			line := m.renderTreeItemList(treeItem, isSelected, isBatchSelected)
+			content.WriteString(line + "\n")
+		}
 	}
 
 	// Footer with keybindings

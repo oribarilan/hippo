@@ -55,9 +55,9 @@ If tests fail because environment variables are set in your shell, you can eithe
 
 1. Unset them temporarily:
 ```bash
-unset AZURE_DEVOPS_ORG_URL
-unset AZURE_DEVOPS_PROJECT
-unset AZURE_DEVOPS_TEAM
+unset HIPPO_ADO_ORG_URL
+unset HIPPO_ADO_PROJECT
+unset HIPPO_ADO_TEAM
 go test -v
 ```
 
