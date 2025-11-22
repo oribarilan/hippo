@@ -1,0 +1,100 @@
+# GoReleaser configuration for Hippo
+# Docs: https://goreleaser.com
+
+version: 2
+
+before:
+  hooks:
+    # Format and vet code
+    - go fmt ./app/...
+    - go vet ./app/...
+    # Run tests
+    - go test -v ./app/...
+
+builds:
+  - id: hippo
+    # Source directory
+    dir: ./app
+    # Binary name
+    binary: hippo
+    # Version injection
+    ldflags:
+      - -s -w
+      - -X main.Version={{.Version}}
+    # Build targets
+    goos:
+      - linux
+      - darwin
+      - windows
+    goarch:
+      - amd64
+      - arm64
+    # Exclude problematic combinations
+    ignore:
+      - goos: windows
+        goarch: arm64
+
+archives:
+  - id: hippo-archive
+    # Archive name format: hippo_v0.3.0_linux_amd64.tar.gz
+    name_template: >-
+      {{ .ProjectName }}_
+      {{- .Version }}_
+      {{- .Os }}_
+      {{- .Arch }}
+    format_overrides:
+      - goos: windows
+        format: zip
+    files:
+      - README.md
+      - LICENSE.md
+
+checksum:
+  name_template: 'checksums.txt'
+  algorithm: sha256
+
+changelog:
+  sort: asc
+  use: github
+  filters:
+    exclude:
+      - '^docs:'
+      - '^test:'
+      - '^ci:'
+      - '^chore:'
+      - Merge pull request
+      - Merge branch
+  groups:
+    - title: Features
+      regexp: '^.*?feat(\([[:word:]]+\))??!?:.+$'
+      order: 0
+    - title: Bug Fixes
+      regexp: '^.*?fix(\([[:word:]]+\))??!?:.+$'
+      order: 1
+    - title: Enhancements
+      regexp: '^.*?enhance(\([[:word:]]+\))??!?:.+$'
+      order: 2
+    - title: Other Changes
+      order: 999
+
+release:
+  github:
+    owner: orbarila
+    name: hippo
+  draft: false
+  prerelease: auto
+  mode: replace
+  header: |
+    ## Hippo {{.Version}}
+    
+    Install or upgrade:
+    ```bash
+    curl -sSL https://raw.githubusercontent.com/orbarila/hippo/main/install.sh | bash
+    ```
+  footer: |
+    ## Checksums
+    
+    All binaries are checksummed for security. Verify downloads with:
+    ```bash
+    sha256sum -c checksums.txt
+    ```

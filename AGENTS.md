@@ -135,3 +135,37 @@ go tool cover -html=coverage.out
 ```
 
 See [README.md](./README.md) for detailed architecture and user documentation.
+
+## Releasing
+
+Hippo uses GoReleaser for automated releases triggered by git tags.
+
+**Release Process:**
+
+1. Ensure all changes are committed and pushed to main
+2. Create and push a version tag:
+   ```bash
+   git tag v0.3.0
+   git push origin v0.3.0
+   ```
+3. GitHub Actions automatically:
+   - Runs tests
+   - Builds binaries for all platforms
+   - Creates GitHub Release with artifacts
+   - Generates changelog
+
+**Version Format:** Semantic versioning (v0.3.0, v1.0.0, etc.)
+
+**Version Embedding:**
+- Version is injected at build time via `-ldflags`
+- Variable: `main.Version` in `app/constants.go`
+- Local builds show "dev"
+- Released builds show actual version (e.g., "v0.3.0")
+
+**Key Files:**
+- `.goreleaser.yml` - Build configuration
+- `.github/workflows/release.yml` - CI/CD workflow
+- `install.sh` - Installation script
+- `app/constants.go` - Version variable
+
+For detailed release procedures and testing, see [CONTRIBUTE.md](./CONTRIBUTE.md).
