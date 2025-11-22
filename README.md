@@ -2,17 +2,6 @@
 
 A terminal user interface (TUI) for Azure DevOps task management, built with Go and Bubbletea.
 
-## TODOs
-
-- auto release on main branch push (use GoReleaser)
-- support curl install for first installation (support MacOS, Windows, Linux)
-- In-app update check 
-- Use go-selfupdate if update available (and offer "skip version")
-
-- changelog generation
-- changelog support in-app
-- justfile
-
 ## Features
 
 - 📋 View all your Azure DevOps work items in a clean terminal interface
@@ -33,11 +22,94 @@ A terminal user interface (TUI) for Azure DevOps task management, built with Go 
 
 ## Prerequisites
 
-- Go 1.21 or higher
-- Azure CLI
-- Azure DevOps Board
+- Azure CLI installed and configured
+- Azure DevOps account
 
-## Setup
+## Installation
+
+### Quick Install (Recommended)
+
+Install Hippo with a single command:
+
+```bash
+curl -sSL https://raw.githubusercontent.com/oribarilan/hippo/main/install.sh | bash
+```
+
+The installer will:
+- Detect your platform (Linux, macOS, Windows)
+- Download the latest release
+- Install to the appropriate directory:
+  - **Linux:** `~/.local/bin` (or `/usr/local/bin` if root)
+  - **macOS:** `/usr/local/bin`
+  - **Windows:** `~/bin`
+
+**Custom installation directory:**
+```bash
+curl -sSL https://raw.githubusercontent.com/oribarilan/hippo/main/install.sh | INSTALL_DIR=/custom/path bash
+```
+
+**Note:** On macOS, you may need to run with `sudo` if `/usr/local/bin` requires elevated permissions, or specify a user directory:
+```bash
+curl -sSL https://raw.githubusercontent.com/oribarilan/hippo/main/install.sh | INSTALL_DIR=$HOME/.local/bin bash
+```
+
+**Important:** The quick install will be available once the first release (v0.1.0) is published. Until then, use [Building from Source](#building-from-source).
+
+### Manual Installation
+
+If you prefer to download and install manually:
+
+1. **Download the latest release** for your platform from:
+   [https://github.com/oribarilan/hippo/releases/latest](https://github.com/oribarilan/hippo/releases/latest)
+
+2. **Extract the archive:**
+   ```bash
+   # Linux/macOS
+   tar -xzf hippo_*_linux_amd64.tar.gz
+   
+   # Windows
+   # Extract hippo_*_windows_amd64.zip using your preferred tool
+   ```
+
+3. **Move to a directory in your PATH:**
+   ```bash
+   # Linux/macOS (system-wide)
+   sudo mv hippo /usr/local/bin/
+   
+   # Linux/macOS (user-only)
+   mkdir -p ~/.local/bin
+   mv hippo ~/.local/bin/
+   
+   # Windows
+   # Move hippo.exe to a directory in your PATH
+   ```
+
+4. **Verify installation:**
+   ```bash
+   hippo --version
+   ```
+
+### Building from Source
+
+**Prerequisites:** Go 1.21 or higher
+
+1. **Clone and build**:
+```bash
+git clone https://github.com/oribarilan/hippo.git
+cd hippo/app
+go build -o hippo
+```
+
+2. **Move to your PATH** (optional):
+```bash
+# macOS/Linux
+sudo mv hippo /usr/local/bin/
+
+# Or to user directory
+mv hippo ~/.local/bin/
+```
+
+## Getting Started
 
 1. **Install Azure CLI** (if not already installed):
    - macOS: `brew install azure-cli`
@@ -49,16 +121,9 @@ A terminal user interface (TUI) for Azure DevOps task management, built with Go 
 az login
 ```
 
-3. **Install Go dependencies**:
+3. **Run Hippo**:
 ```bash
-go mod download
-```
-
-4. **Build and run Hippo**:
-```bash
-cd app
-go build -o hippo
-./hippo
+hippo
 ```
 
 On first run, the setup wizard will start automatically and prompt you for:
@@ -68,61 +133,7 @@ On first run, the setup wizard will start automatically and prompt you for:
 
 Your configuration is saved to `~/.config/hippo/config.yaml`.
 
-To reconfigure later, run: `./hippo --init`
-
-## Building
-
-```bash
-cd app
-go build -o hippo
-```
-
-## Running
-
-```bash
-cd app
-./hippo
-```
-
-Or run directly:
-```bash
-cd app
-go run .
-```
-
-## Testing
-
-Hippo includes comprehensive unit tests and benchmarks for core functionality:
-
-```bash
-cd app
-
-# Run all tests
-go test -v
-
-# Run specific test
-go test -run TestTreeCache -v
-
-# Run benchmarks
-go test -bench=. -benchmem
-
-# Compare cache performance
-go test -bench=BenchmarkTreeCacheVsNoCacheScrolling -benchmem
-
-# Check test coverage
-go test -cover
-
-# Generate coverage report
-go test -coverprofile=coverage.out
-go tool cover -html=coverage.out
-```
-
-The test suite includes:
-- Unit tests for tree building and flattening
-- Cache hit/miss verification tests
-- Cache invalidation tests across operations
-- Integration tests for multi-list caching
-- Performance benchmarks comparing cached vs uncached tree operations
+To reconfigure later, run: `hippo --init`
 
 ## Keyboard Shortcuts
 
@@ -259,6 +270,8 @@ echo "HIPPO_ADO_PROJECT=DevProject" > .env
 ./hippo
 ```
 
+**For more configuration examples and advanced usage, see the full configuration section below.**
+
 ### Configuration Examples
 
 **Example 1: Single project user**
@@ -340,130 +353,29 @@ Environment variables are fully supported! You can continue using `.env` files, 
 
 No migration needed - your existing setup will continue to work.
 
+## Contributing
+
+Interested in contributing to Hippo? Check out our [Contributing Guide](./CONTRIBUTE.md) for:
+- Development setup instructions
+- Code style guidelines
+- Testing procedures
+- Release process
+- How to submit changes
+
 ## Project Structure
 
 ```
 .
-├── app/
-│   ├── main.go       # Main application and Bubbletea UI logic
-│   ├── main_test.go  # Unit tests and benchmarks for tree operations
-│   ├── client.go     # Azure DevOps API client
-│   └── go.mod        # Go module definition
-├── README.md         # This file
-└── AGENTS.md         # Architecture documentation for AI agents
+├── app/             # Main application code
+├── README.md        # This file (user documentation)
+├── CONTRIBUTE.md    # Contributing guide
+├── AGENTS.md        # Architecture documentation
+├── TESTING.md       # Testing documentation
+├── WIZARD.md        # Setup wizard documentation
+└── LICENSE.md       # MIT License
 ```
 
-## Architecture
-
-### UI Layout (Fixed Three-Part Structure)
-
-All views in Hippo follow a consistent three-part layout:
-
-```
-┌─────────────────────────────────────┐
-│  Title Bar (always present)         │ ← renderTitleBar()
-│  Shows view title + version         │
-├─────────────────────────────────────┤
-│                                     │
-│  Dynamic Content Area               │ ← Changes per view
-│  (list, detail, search, etc.)       │
-│                                     │
-├─────────────────────────────────────┤
-│  Action Log (last action timestamp) │
-│  ─────────────────────────────────  │ ← renderFooter()
-│  Keybindings (context-specific)     │
-└─────────────────────────────────────┘
-```
-
-### View Types
-
-1. **List View** - Shows work items in a tree structure with sprint tabs
-2. **Detail View** - Displays a card with complete work item information including parent
-3. **Search View** - Filtered view of work items with search input
-4. **State Picker View** - Select new state for a work item
-5. **Filter View** - Custom query input (coming soon)
-
-### Key Components
-
-- **`renderTitleBar(title)`** - Renders consistent header across all views
-- **`renderFooter(keybindings)`** - Renders consistent footer with log and help
-- **`buildDetailContent()`** - Creates the work item detail card
-- **`getRelativeTime(date)`** - Formats dates with human-readable relative time
-
-See [AGENTS.md](./AGENTS.md) for detailed architecture documentation.
-
-## Detailed Architecture
-
-### Data Models
-
-**WorkItem** (`app/main.go:80-95`)
-```go
-type WorkItem struct {
-    ID, Title, State, AssignedTo, WorkItemType, Description, Tags string
-    Priority int
-    CreatedDate, ChangedDate, IterationPath string
-    ParentID *int
-    Children []*WorkItem
-    Comments string
-}
-```
-
-**TreeItem** - Flattened tree with depth info for rendering
-**Sprint** - Sprint metadata (Name, Path, StartDate, EndDate)
-
-### Key Functions
-
-**Layout System:**
-- `renderTitleBar(title)` - Consistent purple header with version
-- `renderFooter(keybindings)` - Footer with action log and keybindings
-
-**Tree Building:**
-- `buildTreeStructure()` - Organizes items into parent-child hierarchy
-- `flattenTree()` - Converts tree to flat list with depth info
-- `getTreePrefix()` - Returns tree drawing characters (│, ├, ╰)
-
-**Detail View:**
-- `buildDetailContent()` - Creates work item card
-- `getParentTask()` - Finds parent work item
-- `getRelativeTime()` - Formats dates (< day ago, 2 weeks ago, etc.)
-
-**Data Filtering:**
-- `getVisibleTasks()` - Applies search and sprint filters
-- `getVisibleTreeItems()` - Returns filtered tree structure
-
-### File Structure
-
-**app/main.go** (~1700 lines)
-- Constants & Types (1-136)
-- Initialization (137-275)
-- Update Logic (277-756)
-- Tree Building (758-816)
-- Data Helpers (818-922)
-- Detail View Logic (924-1066)
-- Rendering Framework (1112-1141)
-- View Renderers (1143-1700)
-
-**app/client.go** (~550 lines)
-- Azure DevOps API client
-- Authentication via Azure CLI
-- Work item CRUD operations
-- Sprint/iteration queries
-
-### Adding a New View
-
-1. Create render function:
-```go
-func (m model) renderNewView() string {
-    var content strings.Builder
-    content.WriteString(m.renderTitleBar("View Title"))
-    content.WriteString("...content...")
-    content.WriteString(m.renderFooter("keybindings"))
-    return content.String()
-}
-```
-
-2. Add to `viewState` constants and `View()` switch
-3. Add keyboard handlers in `Update()`
+For detailed architecture and development information, see [CONTRIBUTE.md](./CONTRIBUTE.md) and [AGENTS.md](./AGENTS.md).
 
 ## Troubleshooting
 

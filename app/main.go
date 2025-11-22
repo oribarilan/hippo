@@ -20,7 +20,7 @@ func main() {
 
 	// 2. Handle special flags
 	if flags.ShowVersion {
-		fmt.Println("Hippo v0.2.0")
+		fmt.Printf("Hippo %s\n", Version)
 		return
 	}
 

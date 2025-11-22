@@ -165,7 +165,7 @@ func (m model) renderTitleBar(title string) string {
 		Padding(0, 1)
 
 	// Calculate padding to align version to the right
-	versionText := version
+	versionText := Version
 	availableWidth := m.ui.width - len(title) - len(versionText) - 4 // 4 for padding (2 on each side)
 	if availableWidth < 0 {
 		availableWidth = 0
