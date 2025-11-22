@@ -449,7 +449,7 @@ hippo         # Start
 ### Manual Installation
 
 Download the latest release for your platform:
-https://github.com/orbarila/hippo/releases/latest
+https://github.com/oribarilan/hippo/releases/latest
 
 Extract and move to a directory in your PATH:
 ```bash

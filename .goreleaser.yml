@@ -76,7 +76,7 @@ changelog:
 
 release:
   github:
-    owner: orbarila
+    owner: oribarilan
     name: hippo
   draft: false
   prerelease: auto
@@ -86,7 +86,7 @@ release:
     
     Install or upgrade:
     ```bash
-    curl -sSL https://raw.githubusercontent.com/orbarila/hippo/main/install.sh | bash
+    curl -sSL https://raw.githubusercontent.com/oribarilan/hippo/main/install.sh | bash
     ```
   footer: |
     ## Checksums
