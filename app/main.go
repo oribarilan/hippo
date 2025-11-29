@@ -29,10 +29,24 @@ func main() {
 		return
 	}
 
-	// 3. Load and merge configuration from all sources
+	// 3. Check for dummy mode (flag or environment variable)
+	dummyMode := flags.DummyMode || os.Getenv("HIPPO_DUMMY_MODE") == "true"
+
+	// 4. If dummy mode, skip config and use dummy backend
+	if dummyMode {
+		m := initialModelWithDummyBackend()
+		p := tea.NewProgram(m, tea.WithAltScreen())
+		if _, err := p.Run(); err != nil {
+			fmt.Printf("Error: %v", err)
+			os.Exit(1)
+		}
+		return
+	}
+
+	// 5. Load and merge configuration from all sources
 	config, configSource, err := LoadConfig(flags)
 
-	// 4. Determine if we need to run wizard
+	// 6. Determine if we need to run wizard
 	needsWizard := false
 	var existingConfig *Config
 	var existingConfigSource *ConfigSource
@@ -58,14 +72,14 @@ func main() {
 		existingConfigSource = configSource
 	}
 
-	// 5. If --init flag is set, force wizard mode
+	// 7. If --init flag is set, force wizard mode
 	if flags.RunWizard {
 		needsWizard = true
 		existingConfig = config
 		existingConfigSource = configSource
 	}
 
-	// 6. Start TUI (either with wizard or normal mode)
+	// 8. Start TUI (either with wizard or normal mode)
 	var m model
 	if needsWizard {
 		m = initialModelWithWizard(existingConfig, existingConfigSource)

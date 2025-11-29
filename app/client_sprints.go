@@ -30,7 +30,7 @@ func (c *AzureDevOpsClient) GetTeamIterations() ([]work.TeamSettingsIteration, e
 }
 
 // GetCurrentAndAdjacentSprints returns previous, current, and next sprint
-func (c *AzureDevOpsClient) GetCurrentAndAdjacentSprints() (prev, curr, next *work.TeamSettingsIteration, err error) {
+func (c *AzureDevOpsClient) GetCurrentAndAdjacentSprints() (prev *Sprint, curr *Sprint, next *Sprint, err error) {
 	iterations, err := c.GetTeamIterations()
 	if err != nil {
 		return nil, nil, nil, err
@@ -42,6 +42,7 @@ func (c *AzureDevOpsClient) GetCurrentAndAdjacentSprints() (prev, curr, next *wo
 
 	now := time.Now()
 	var currentIdx = -1
+	var currentIter *work.TeamSettingsIteration
 
 	// Find current sprint
 	for i, iter := range iterations {
@@ -57,14 +58,14 @@ func (c *AzureDevOpsClient) GetCurrentAndAdjacentSprints() (prev, curr, next *wo
 			finish := finishDate.Time
 
 			// Truncate to start of day (removes time component) for date-only comparison
-			startDate := start.Truncate(24 * time.Hour)
-			finishDate := finish.Truncate(24 * time.Hour)
+			startDateTrunc := start.Truncate(24 * time.Hour)
+			finishDateTrunc := finish.Truncate(24 * time.Hour)
 			nowDate := now.Truncate(24 * time.Hour)
 
 			// Check if today falls within the sprint (inclusive of start and end dates)
-			if !nowDate.Before(startDate) && !nowDate.After(finishDate) {
+			if !nowDate.Before(startDateTrunc) && !nowDate.After(finishDateTrunc) {
 				currentIdx = i
-				curr = &iterations[i]
+				currentIter = &iterations[i]
 				break
 			}
 		}
@@ -73,18 +74,44 @@ func (c *AzureDevOpsClient) GetCurrentAndAdjacentSprints() (prev, curr, next *wo
 	// If no current sprint found, use the most recent one
 	if currentIdx == -1 && len(iterations) > 0 {
 		currentIdx = len(iterations) - 1
-		curr = &iterations[currentIdx]
+		currentIter = &iterations[currentIdx]
 	}
 
-	// Get previous sprint
+	// Convert to Sprint structs
 	if currentIdx > 0 {
-		prev = &iterations[currentIdx-1]
+		prev = convertIterationToSprint(&iterations[currentIdx-1])
 	}
 
-	// Get next sprint
+	if currentIter != nil {
+		curr = convertIterationToSprint(currentIter)
+	}
+
 	if currentIdx >= 0 && currentIdx < len(iterations)-1 {
-		next = &iterations[currentIdx+1]
+		next = convertIterationToSprint(&iterations[currentIdx+1])
 	}
 
 	return prev, curr, next, nil
+}
+
+// convertIterationToSprint converts an Azure DevOps TeamSettingsIteration to our Sprint struct
+func convertIterationToSprint(iter *work.TeamSettingsIteration) *Sprint {
+	if iter == nil || iter.Name == nil || iter.Path == nil {
+		return nil
+	}
+
+	sprint := &Sprint{
+		Name: *iter.Name,
+		Path: *iter.Path,
+	}
+
+	if iter.Attributes != nil {
+		if iter.Attributes.StartDate != nil {
+			sprint.StartDate = iter.Attributes.StartDate.Time.Format("2006-01-02")
+		}
+		if iter.Attributes.FinishDate != nil {
+			sprint.EndDate = iter.Attributes.FinishDate.Time.Format("2006-01-02")
+		}
+	}
+
+	return sprint
 }

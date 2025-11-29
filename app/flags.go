@@ -14,6 +14,7 @@ type FlagConfig struct {
 	ShowVersion     bool
 	RunWizard       bool
 	ShowHelp        bool
+	DummyMode       bool // Internal: enable dummy backend for development
 }
 
 // parseFlags parses command-line flags and returns a FlagConfig
@@ -30,6 +31,8 @@ func parseFlags() *FlagConfig {
 	flag.BoolVar(&flags.ShowVersion, "version", false, "Show version")
 	flag.BoolVar(&flags.RunWizard, "init", false, "Run configuration wizard")
 	flag.BoolVar(&flags.ShowHelp, "help", false, "Show help")
+	// Undocumented flag for development - not shown in help
+	flag.BoolVar(&flags.DummyMode, "dummy", false, "")
 
 	flag.Parse()
 

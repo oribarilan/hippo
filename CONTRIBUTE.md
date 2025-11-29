@@ -18,12 +18,6 @@ Thank you for your interest in contributing to Hippo! This guide will help you s
 ### Prerequisites
 
 - **Go 1.21 or higher** - [Install Go](https://go.dev/doc/install)
-- **Azure CLI** - For authentication
-  - macOS: `brew install azure-cli`
-  - Windows: Download from [Microsoft Docs](https://docs.microsoft.com/en-us/cli/azure/install-azure-cli)
-  - Linux: Follow instructions at [Microsoft Docs](https://docs.microsoft.com/en-us/cli/azure/install-azure-cli)
-- **Azure DevOps account** - With access to a project for testing
-- **Git** - For version control
 
 ### Initial Setup
 
@@ -47,46 +41,40 @@ az login
 4. **Run the setup wizard**:
 ```bash
 cd app
-go run . --init
-```
-
-The wizard will prompt you for:
-- Azure DevOps organization URL (e.g., `https://dev.azure.com/your-org`)
-- Project name
-- Team name (optional)
-
-Your configuration will be saved to `~/.config/hippo/config.yaml`.
-
-## Building from Source
-
-### Standard Build
-
-Build without version information (shows "dev"):
-
-```bash
-cd app
-go build -o hippo
-./hippo --version  # Output: Hippo dev
-```
-
-### Build with Custom Version
-
-Inject a custom version at build time:
-
-```bash
-cd app
-go build -ldflags="-X main.Version=v0.3.0-custom" -o hippo
-./hippo --version  # Output: Hippo v0.3.0-custom
-```
-
-### Run Without Building
-
-For quick testing during development:
-
-```bash
-cd app
 go run .
 ```
+
+### Dummy Mode (Development Backend)
+
+For development and testing without Azure DevOps access, use dummy mode. This provides an in-memory mock backend with sample work items.
+
+**Enable via environment variable:**
+```bash
+cd app
+HIPPO_DUMMY_MODE=true go run .
+```
+
+**Enable via flag:**
+```bash
+cd app
+go run . --dummy
+```
+
+Dummy mode provides:
+- Sample work items with parent-child relationships (User Stories, Tasks, Bugs)
+- Three sprints (previous, current, next) based on current date
+- Full CRUD operations (create, update, delete) - all in-memory
+- Various work item states (New, Active, Closed)
+- Backlog items and abandoned work items
+- No Azure CLI login or configuration required
+
+This is useful for:
+- UI development without Azure DevOps access
+- Testing new features locally
+- Demo and screenshot purposes
+- Running the app in CI environments
+
+Note: All data is stored in memory and resets when the application restarts.
 
 ## Testing
 
@@ -125,17 +113,6 @@ go test -bench=. -benchmem
 # Compare cache vs no-cache performance
 go test -bench=BenchmarkTreeCacheVsNoCacheScrolling -benchmem
 ```
-
-### Test Coverage
-
-The test suite includes:
-- Unit tests for tree building and flattening
-- Cache hit/miss verification tests
-- Cache invalidation tests across operations
-- Integration tests for multi-list caching
-- Performance benchmarks comparing cached vs uncached tree operations
-
-See `app/main_test.go` and `app/fixtures_test.go` for test implementations.
 
 ## Code Style
 
@@ -341,99 +318,3 @@ The version is automatically injected at build time:
 - **Released builds:** Show actual version (e.g., "v0.3.0")
 - **Build command:** GoReleaser uses `-ldflags="-X main.Version={{.Version}}"`
 
-### Testing a Release Locally
-
-Before creating an official release, you can test the release process:
-
-```bash
-# Install GoReleaser
-brew install goreleaser
-
-# Test release build (doesn't publish)
-goreleaser release --snapshot --clean
-
-# Check generated artifacts in dist/
-ls -la dist/
-```
-
-### Release Checklist
-
-Before creating a release:
-
-- [ ] All tests pass: `go test -v ./...`
-- [ ] Code is formatted: `go fmt ./...`
-- [ ] Code is vetted: `go vet ./...`
-- [ ] Version number follows semantic versioning
-- [ ] CHANGELOG or commit messages are clear
-- [ ] Documentation is up to date
-- [ ] All changes committed and pushed to main
-
-### Key Release Files
-
-- `.goreleaser.yml` - Build configuration for releases
-- `.github/workflows/release.yml` - CI/CD workflow (not yet created in Phase 2)
-- `app/constants.go` - Version variable
-
-## Submitting Changes
-
-### Workflow
-
-1. **Fork the repository** (or create a branch if you have access)
-
-2. **Create a feature branch**:
-```bash
-git checkout -b feature/your-feature-name
-```
-
-3. **Make your changes** following the code style guidelines
-
-4. **Test your changes**:
-```bash
-cd app
-go fmt ./...
-go vet ./...
-go test -v ./...
-```
-
-5. **Commit your changes**:
-```bash
-git add .
-git commit -m "feat: add your feature description"
-```
-
-Use conventional commit messages:
-- `feat:` - New feature
-- `fix:` - Bug fix
-- `docs:` - Documentation changes
-- `refactor:` - Code refactoring
-- `test:` - Test additions or changes
-- `chore:` - Maintenance tasks
-
-6. **Push to your fork/branch**:
-```bash
-git push origin feature/your-feature-name
-```
-
-7. **Create a Pull Request** on GitHub with:
-   - Clear description of changes
-   - Reference to related issues
-   - Screenshots/demos if UI changes
-
-### Pull Request Guidelines
-
-- Keep PRs focused on a single feature or fix
-- Update documentation if needed
-- Add tests for new functionality
-- Ensure all tests pass
-- Follow the existing code style
-- Be responsive to review feedback
-
-## Getting Help
-
-- **Issues:** [GitHub Issues](https://github.com/oribarilan/hippo/issues)
-- **Discussions:** [GitHub Discussions](https://github.com/oribarilan/hippo/discussions)
-- **Documentation:** See [AGENTS.md](./AGENTS.md) for detailed architecture
-
-## License
-
-By contributing to Hippo, you agree that your contributions will be licensed under the MIT License.
