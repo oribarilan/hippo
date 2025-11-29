@@ -92,7 +92,12 @@ func (m model) Init() tea.Cmd {
 		return textinput.Blink
 	}
 
-	// Otherwise, initialize client and load data
+	// If client is already set (e.g., dummy mode), use it directly
+	if m.client != nil {
+		return tea.Batch(loadSprints(m.client), m.spinner.Tick)
+	}
+
+	// Otherwise, initialize Azure DevOps client and load data
 	client, err := NewAzureDevOpsClient(m.config)
 	if err != nil {
 		return func() tea.Msg {
@@ -170,6 +175,102 @@ func initialModelWithWizard(existingConfig *Config, existingConfigSource *Config
 			projectInput: projectInput,
 			teamInput:    teamInput,
 			err:          "",
+		},
+	}
+}
+
+// initialModelWithDummyBackend creates a model with the dummy backend for development
+func initialModelWithDummyBackend() model {
+	s := spinner.New()
+	s.Spinner = spinner.Line
+	s.Style = lipgloss.NewStyle().Foreground(lipgloss.Color("205"))
+
+	// Filter state inputs
+	filterInput := textinput.New()
+	filterInput.Placeholder = "Filter by title or ID..."
+	filterInput.Focus()
+
+	findInput := textinput.New()
+	findInput.Placeholder = "Find items (search in title/description)..."
+	findInput.Focus()
+
+	// Edit mode inputs
+	editTitleInput := textinput.New()
+	editTitleInput.Placeholder = "Title"
+	editTitleInput.CharLimit = 255
+	editTitleInput.Width = 80
+
+	editDescriptionInput := textarea.New()
+	editDescriptionInput.Placeholder = "Description"
+	editDescriptionInput.CharLimit = 4000
+	editDescriptionInput.SetWidth(80)
+	editDescriptionInput.SetHeight(10)
+
+	// Create mode input
+	createInput := textinput.New()
+	createInput.Placeholder = "Enter task title..."
+	createInput.CharLimit = 255
+	createInput.Width = 80
+
+	// Create dummy config for display purposes
+	dummyConfig := &Config{
+		ConfigVersion:   CurrentConfigVersion,
+		OrganizationURL: "https://dev.azure.com/demo-org",
+		Project:         "DemoProject",
+		Team:            "DemoTeam",
+	}
+	dummyConfigSource := &ConfigSource{
+		OrganizationURL: "dummy",
+		Project:         "dummy",
+		Team:            "dummy",
+	}
+
+	// Create the dummy backend
+	dummyBackend := NewDummyBackend()
+
+	return model{
+		// Configuration
+		config:       dummyConfig,
+		configSource: dummyConfigSource,
+
+		// Initialize WorkItemList maps
+		sprintLists:  make(map[sprintTab]*WorkItemList),
+		backlogLists: make(map[backlogTab]*WorkItemList),
+
+		// Core state fields
+		state:             loadingView,
+		loading:           true,
+		client:            dummyBackend,
+		spinner:           s,
+		availableStates:   []string{"New", "Active", "Closed", "Removed"},
+		stateCategories:   make(map[string]string),
+		currentMode:       sprintMode,
+		currentTab:        currentSprint,
+		currentBacklogTab: recentBacklog,
+		sprints:           make(map[sprintTab]*Sprint),
+		styles:            NewStyles(),
+
+		// Grouped state initialization
+		ui: UIState{
+			cursor:       0,
+			scrollOffset: 0,
+		},
+		edit: EditState{
+			titleInput:       editTitleInput,
+			descriptionInput: editDescriptionInput,
+			fieldCursor:      0,
+			fieldCount:       2,
+		},
+		create: CreateState{
+			input: createInput,
+		},
+		batch: BatchState{
+			selectedItems: make(map[int]bool),
+		},
+		filter: FilterState{
+			filteredTasks: []WorkItem{},
+			filterInput:   filterInput,
+			findInput:     findInput,
 		},
 	}
 }

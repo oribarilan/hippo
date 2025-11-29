@@ -142,7 +142,7 @@ type model struct {
 	loading           bool
 	loadingMore       bool // Track if we're loading more items (for inline spinner)
 	err               error
-	client            *AzureDevOpsClient
+	client            Backend
 	spinner           spinner.Model
 	viewport          viewport.Model
 	stateCursor       int
